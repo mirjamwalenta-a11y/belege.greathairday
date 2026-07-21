@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#2C2438" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Salon Belege" />
+  <title>Salon Walenta · Belege</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --ink:      #1A1414;
+      --ink2:     #5C5055;
+      --ink3:     #9C8E92;
+      --canvas:   #F7F4F2;
+      --surface:  #FFFFFF;
+      --plum:     #2C2438;
+      --plum2:    #3D2F4E;
+      --lilac:    #C8B8D8;
+      --rouge:    #B85C4A;
+      --sage:     #4A8A6C;
+      --gold:     #A67840;
+      --border:   #E4DCE8;
+      --radius:   14px;
+      --shadow:   0 1px 6px rgba(44,36,56,0.09);
+    }
+    html, body { height: 100%; background: var(--canvas); font-family: 'Inter', sans-serif; color: var(--ink); -webkit-font-smoothing: antialiased; }
+    body { display: flex; flex-direction: column; max-width: 480px; margin: 0 auto; min-height: 100dvh; }
+
+    /* HEADER */
+    .header {
+      background: var(--plum);
+      padding: 14px 18px 12px;
+      display: flex; align-items: center; justify-content: space-between;
+      position: sticky; top: 0; z-index: 100;
+      box-shadow: 0 2px 12px rgba(44,36,56,0.25);
+    }
+    .header-left { display: flex; align-items: center; gap: 10px; }
+    .header-logo { font-size: 22px; line-height: 1; }
+    .header-title { color: #fff; font-size: 16px; font-weight: 700; letter-spacing: -0.3px; }
+    .header-sub { color: var(--lilac); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 1px; }
+    .month-select {
+      background: var(--plum2); color: #fff; border: none; border-radius: 8px;
+      padding: 6px 8px; font-size: 12px; font-family: inherit; cursor: pointer; outline: none;
+    }
+
+    /* NAV */
+    .nav {
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      display: flex; position: sticky; top: 68px; z-index: 99;
+    }
+    .nav-btn {
+      flex: 1; padding: 12px 4px; border: none; background: none; cursor: pointer;
+      font-size: 12px; font-weight: 500; color: var(--ink3); font-family: inherit;
+      border-bottom: 2px solid transparent; transition: color 0.15s, border-color 0.15s;
+    }
+    .nav-btn.active { color: var(--plum); font-weight: 700; border-bottom-color: var(--plum); }
+
+    /* MAIN */
+    .main { flex: 1; padding: 18px 16px 100px; overflow-y: auto; }
+
+    /* CARDS */
+    .card { background: var(--surface); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow); margin-bottom: 12px; }
+
+    /* GRID 2 COL */
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+    .stat-label { font-size: 10px; color: var(--ink3); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 5px; }
+    .stat-value { font-size: 20px; font-weight: 700; letter-spacing: -0.5px; }
+    .stat-sub { font-size: 11px; color: var(--ink3); margin-top: 3px; }
+
+    /* BAR */
+    .bar-track { background: #F0EAF4; border-radius: 4px; height: 5px; margin-top: 4px; }
+    .bar-fill { border-radius: 4px; height: 5px; transition: width 0.4s ease; }
+
+    /* BELEG ITEM */
+    .beleg-item { background: var(--surface); border-radius: var(--radius); padding: 14px; margin-bottom: 10px; box-shadow: var(--shadow); }
+    .beleg-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+    .beleg-meta { flex: 1; min-width: 0; }
+    .beleg-tag {
+      display: inline-flex; align-items: center; gap: 3px;
+      font-size: 10px; font-weight: 600; border-radius: 6px; padding: 2px 7px; margin-bottom: 5px;
+    }
+    .beleg-date { font-size: 10px; color: var(--ink3); margin-left: 4px; }
+    .beleg-name { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .beleg-desc { font-size: 12px; color: var(--ink2); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .beleg-amount { font-size: 16px; font-weight: 700; white-space: nowrap; }
+    .beleg-actions { display: flex; gap: 8px; margin-top: 10px; }
+    .btn-sm {
+      flex: 1; padding: 7px; border: none; border-radius: 8px; cursor: pointer;
+      font-size: 12px; font-family: inherit; font-weight: 500;
+    }
+    .btn-edit { background: #F5F0F8; color: var(--ink2); }
+    .btn-del { background: #FEF0EE; color: var(--rouge); }
+
+    /* EMPTY STATE */
+    .empty { text-align: center; padding: 48px 20px; color: var(--ink3); }
+    .empty-icon { font-size: 40px; margin-bottom: 12px; }
+    .empty-text { font-size: 14px; line-height: 1.5; }
+
+    /* BUTTONS */
+    .btn-primary {
+      width: 100%; background: var(--plum); color: #fff; border: none; border-radius: var(--radius);
+      padding: 14px; font-size: 14px; font-weight: 600; font-family: inherit; cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .btn-primary:active { opacity: 0.85; }
+    .btn-outline {
+      background: none; border: 1.5px solid var(--plum); color: var(--plum); border-radius: 8px;
+      padding: 5px 12px; font-size: 12px; font-weight: 600; font-family: inherit; cursor: pointer;
+    }
+
+    /* UPLOAD ZONE */
+    .upload-zone {
+      border: 2px dashed var(--lilac); border-radius: var(--radius); padding: 32px 20px;
+      text-align: center; cursor: pointer; background: var(--surface); margin-bottom: 16px;
+      transition: background 0.2s, border-color 0.2s;
+    }
+    .upload-zone.drag { background: #F0EAF4; border-color: var(--plum); }
+    .upload-icon { font-size: 32px; margin-bottom: 8px; }
+    .upload-title { font-size: 14px; font-weight: 600; color: var(--plum); }
+    .upload-hint { font-size: 12px; color: var(--ink3); margin-top: 4px; }
+
+    /* FORM */
+    .form-group { display: flex; flex-direction: column; gap: 9px; }
+    .form-row { display: flex; gap: 9px; }
+    .inp {
+      width: 100%; padding: 11px 12px; border: 1.5px solid var(--border); border-radius: 9px;
+      font-size: 14px; font-family: inherit; background: #FAFAF8; color: var(--ink); outline: none;
+      transition: border-color 0.15s;
+    }
+    .inp:focus { border-color: var(--plum); }
+    select.inp { cursor: pointer; }
+    .form-label { font-size: 11px; font-weight: 600; color: var(--ink3); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: -3px; }
+
+    /* SECTION TITLE */
+    .section-title { font-size: 12px; font-weight: 600; color: var(--ink2); margin-bottom: 10px; }
+
+    /* EDIT FORM */
+    .edit-form { display: flex; flex-direction: column; gap: 8px; }
+    .edit-actions { display: flex; gap: 8px; margin-top: 4px; }
+    .btn-save { flex: 1; background: var(--plum); color: #fff; border: none; border-radius: 8px; padding: 10px; font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer; }
+    .btn-cancel { flex: 1; background: #F0EAF4; color: var(--ink2); border: none; border-radius: 8px; padding: 10px; font-size: 13px; font-family: inherit; cursor: pointer; }
+
+    /* TOAST */
+    .toast {
+      position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%);
+      background: var(--plum); color: #fff; border-radius: 10px;
+      padding: 11px 22px; font-size: 13px; font-weight: 600;
+      box-shadow: 0 4px 20px rgba(44,36,56,0.3); z-index: 999;
+      animation: toastIn 0.2s ease;
+    }
+    .toast.err { background: var(--rouge); }
+    @keyframes toastIn { from { opacity:0; transform: translateX(-50%) translateY(8px); } to { opacity:1; transform: translateX(-50%) translateY(0); } }
+
+    /* LOADING */
+    .loading-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100dvh; gap: 14px; }
+    .spinner { width: 36px; height: 36px; border: 3px solid var(--border); border-top-color: var(--plum); border-radius: 50%; animation: spin 0.7s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ANALYZING OVERLAY */
+    .analyzing { display: flex; align-items: center; gap: 8px; background: #F0EAF4; border-radius: 9px; padding: 12px 14px; margin-bottom: 14px; }
+    .analyzing-dot { width: 8px; height: 8px; background: var(--plum); border-radius: 50%; animation: pulse 0.8s ease-in-out infinite alternate; }
+    @keyframes pulse { to { opacity: 0.3; } }
+  </style>
+</head>
+<body>
+
+<div id="app">
+  <div class="loading-screen">
+    <div class="spinner"></div>
+    <div style="color:var(--ink3);font-size:13px;">Wird geladen…</div>
+  </div>
+</div>
+
+<script>
+const KATEGORIEN = [
+  { id:"produkte",    label:"Produkteinkauf",       icon:"🧴", farbe:"#7C6B8A" },
+  { id:"miete",       label:"Miete & Betriebskosten",icon:"🏠", farbe:"#5B7FA6" },
+  { id:"personal",    label:"Personal & Lohn",       icon:"👥", farbe:"#4A8A6C" },
+  { id:"geraete",     label:"Geräte & Werkzeug",     icon:"✂️", farbe:"#A67840" },
+  { id:"marketing",   label:"Marketing & Website",   icon:"📱", farbe:"#B85C4A" },
+  { id:"versicherung",label:"Versicherung & Steuer", icon:"📋", farbe:"#6B7E8C" },
+  { id:"sonstiges",   label:"Sonstiges",             icon:"📦", farbe:"#888"    },
+];
+const MONATE = ["Jänner","Februar","März","April","Mai","Juni","Juli","August","September","Oktober","November","Dezember"];
+const STORAGE_KEY = "salon-walenta-belege-v2";
+const API_KEY_KEY  = "salon-walenta-apikey";
+
+// ── State ────────────────────────────────────────────────────────────────────
+let state = {
+  belege: [],
+  ansicht: "dashboard",
+  aktuellerMonat: getCurrentMonat(),
+  editId: null,
+  editData: {},
+  manuell: emptyManuell(),
+  loading: false,
+  apiKey: "",
+  showKeyInput: false,
+};
+
+function emptyManuell() {
+  return { datum:"", betrag:"", art:"ausgabe", lieferant:"", kategorie:"produkte", beschreibung:"" };
+}
+function getCurrentMonat() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+}
+function monatLabel(k) {
+  if (!k) return "";
+  const [y,m] = k.split("-");
+  return `${MONATE[parseInt(m)-1]} ${y}`;
+}
+function euro(n) {
+  return (n||0).toLocaleString("de-AT",{style:"currency",currency:"EUR"});
+}
+function kat(id) { return KATEGORIEN.find(k=>k.id===id)||KATEGORIEN[6]; }
+
+// ── Storage ───────────────────────────────────────────────────────────────────
+function speichern() {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state.belege)); } catch(e){}
+}
+function laden() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) state.belege = JSON.parse(raw);
+    const key = localStorage.getItem(API_KEY_KEY);
+    if (key) state.apiKey = key;
+  } catch(e){}
+}
+
+// ── Claude API ────────────────────────────────────────────────────────────────
+async function analyzeWithClaude(text, filename) {
+  if (!state.apiKey) throw new Error("kein_key");
+  const prompt = `Du bist Buchhaltungsassistent für einen Wiener Friseursalon.
+Analysiere diesen Beleg und gib NUR ein JSON-Objekt zurück (kein Markdown):
+{"datum":"YYYY-MM-DD oder null","betrag":Zahl,"art":"ausgabe","lieferant":"Name","kategorie":"produkte","beschreibung":"max 60 Zeichen"}
+Kategorien: produkte(L'Oréal,Wella,Farbe,Shampoo), miete(Miete,Strom,Gas), personal(Lohn,SV), geraete(Schere,Föhn,Möbel), marketing(Website,Werbung), versicherung(Steuer,WKO), sonstiges
+Dateiname: ${filename}
+Inhalt: ${text.substring(0,1500)}`;
+
+  const r = await fetch("https://api.anthropic.com/v1/messages", {
+    method:"POST",
+    headers:{ "Content-Type":"application/json", "x-api-key": state.apiKey, "anthropic-version":"2023-06-01" },
+    body: JSON.stringify({ model:"claude-sonnet-4-6", max_tokens:500, messages:[{role:"user",content:prompt}] })
+  });
+  const d = await r.json();
+  const raw = d.content?.map(i=>i.text||"").join("").trim();
+  return JSON.parse(raw.replace(/```json|```/g,"").trim());
+}
+
+// ── Toast ─────────────────────────────────────────────────────────────────────
+let toastTimer;
+function showToast(msg, type="ok") {
+  clearTimeout(toastTimer);
+  let t = document.querySelector(".toast");
+  if (t) t.remove();
+  t = document.createElement("div");
+  t.className = "toast" + (type==="err" ? " err" : "");
+  t.textContent = msg;
+  document.body.appendChild(t);
+  toastTimer = setTimeout(()=>t.remove(), 3200);
+}
+
+// ── Export CSV ────────────────────────────────────────────────────────────────
+function exportCSV() {
+  const monat = state.aktuellerMonat;
+  const liste = state.belege.filter(b=>b.monat===monat);
+  if (!liste.length) { showToast("Keine Belege zum Exportieren","err"); return; }
+  const kopf = "Datum;Lieferant;Beschreibung;Kategorie;Art;Betrag (EUR)\n";
+  const zeilen = liste.map(b=>
+    `${b.datum};${(b.lieferant||"").replace(/;/g,"")};${(b.beschreibung||"").replace(/;/g,"")};${kat(b.kategorie).label};${b.art==="ausgabe"?"Ausgabe":"Einnahme"};${(b.betrag||0).toFixed(2)}`
+  ).join("\n");
+  const blob = new Blob(["\uFEFF"+kopf+zeilen],{type:"text/csv;charset=utf-8;"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `Belege_${monatLabel(monat).replace(" ","_")}.csv`;
+  a.click();
+  showToast("CSV exportiert ✓");
+}
+
+// ── File handling ─────────────────────────────────────────────────────────────
+async function verarbeiteFile(file) {
+  state.loading = true; render();
+  try {
+    let text = file.name;
+    if (file.type==="text/plain") text = await file.text();
+    else if (file.type==="application/pdf") text = `PDF: ${file.name} (${Math.round(file.size/1024)}KB)`;
+    else if (file.type.startsWith("image/")) text = `Bild: ${file.name}`;
+
+    let result;
+    try {
+      result = await analyzeWithClaude(text, file.name);
+    } catch(e) {
+      if (e.message==="kein_key") {
+        state.showKeyInput = true; state.loading = false; render();
+        showToast("Bitte zuerst API-Key eingeben","err"); return;
+      }
+      // Fallback: manuell
+      result = { datum: new Date().toISOString().split("T")[0], betrag:0, art:"ausgabe", lieferant:file.name.replace(/\.[^.]+$/,""), kategorie:"sonstiges", beschreibung:file.name };
+    }
+
+    const monat = result.datum ? result.datum.substring(0,7) : state.aktuellerMonat;
+    state.belege.unshift({
+      id: Date.now()+Math.random(),
+      datum: result.datum||new Date().toISOString().split("T")[0],
+      betrag: result.betrag||0, art: result.art||"ausgabe",
+      lieferant: result.lieferant||file.name, kategorie: result.kategorie||"sonstiges",
+      beschreibung: result.beschreibung||file.name, monat, dateiname: file.name,
+      erfasst: new Date().toISOString(),
+    });
+    speichern(); showToast("Beleg erfasst ✓");
+  } catch(e) { showToast("Fehler beim Verarbeiten","err"); }
+  state.loading = false; render();
+}
+
+// ── Render ────────────────────────────────────────────────────────────────────
+function render() {
+  const app = document.getElementById("app");
+  const { ansicht, aktuellerMonat, belege, loading, editId, showKeyInput } = state;
+
+  const bfm = belege.filter(b=>b.monat===aktuellerMonat);
+  const ausgaben = bfm.filter(b=>b.art==="ausgabe").reduce((s,b)=>s+(b.betrag||0),0);
+  const einnahmen = bfm.filter(b=>b.art==="einnahme").reduce((s,b)=>s+(b.betrag||0),0);
+
+  const katSummen = KATEGORIEN.map(k=>({
+    ...k, summe: bfm.filter(b=>b.kategorie===k.id&&b.art==="ausgabe").reduce((s,b)=>s+(b.betrag||0),0)
+  })).filter(k=>k.summe>0).sort((a,b)=>b.summe-a.summe);
+
+  const alleMonateSet = new Set(belege.map(b=>b.monat));
+  alleMonateSet.add(getCurrentMonat());
+  const alleMonate = Array.from(alleMonateSet).sort().reverse();
+
+  const monatOptions = alleMonate.map(m=>`<option value="${m}"${m===aktuellerMonat?" selected":""}>${monatLabel(m)}</option>`).join("");
+
+  // ── Dashboard ──
+  let inhalt = "";
+  if (ansicht==="dashboard") {
+    const katBars = katSummen.map(k=>`
+      <div style="margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:3px">
+          <span>${k.icon} ${k.label}</span>
+          <span style="font-weight:600">${euro(k.summe)}</span>
+        </div>
+        <div class="bar-track"><div class="bar-fill" style="background:${k.farbe};width:${Math.min(100,(k.summe/ausgaben)*100)}%"></div></div>
+      </div>`).join("");
+
+    const emptyState = bfm.length===0 ? `
+      <div class="empty">
+        <div class="empty-icon">📂</div>
+        <div class="empty-text">Noch keine Belege für<br><strong>${monatLabel(aktuellerMonat)}</strong>.</div>
+        <button class="btn-primary" style="margin-top:16px;width:auto;padding:10px 24px" onclick="setAnsicht('neu')">Ersten Beleg erfassen</button>
+      </div>` : "";
+
+    const exportBtn = bfm.length>0 ? `<button class="btn-primary" onclick="exportCSV()">📤 Exportieren für Steuerberater</button>` : "";
+
+    const katCard = katSummen.length>0 ? `
+      <div class="card">
+        <div class="section-title">Ausgaben nach Kategorie</div>
+        ${katBars}
+      </div>` : "";
+
+    inhalt = `
+      <div style="font-size:12px;color:var(--ink3);margin-bottom:12px">${monatLabel(aktuellerMonat)} · ${bfm.length} Belege</div>
+      <div class="grid2">
+        <div class="card" style="margin-bottom:0">
+          <div class="stat-label">Ausgaben</div>
+          <div class="stat-value" style="color:var(--rouge)">${euro(ausgaben)}</div>
+          <div class="stat-sub">${bfm.filter(b=>b.art==="ausgabe").length} Belege</div>
+        </div>
+        <div class="card" style="margin-bottom:0">
+          <div class="stat-label">Einnahmen</div>
+          <div class="stat-value" style="color:var(--sage)">${euro(einnahmen)}</div>
+          <div class="stat-sub">${bfm.filter(b=>b.art==="einnahme").length} Belege</div>
+        </div>
+      </div>
+      ${katCard}
+      ${emptyState}
+      ${exportBtn}`;
+  }
+
+  // ── Belege ──
+  else if (ansicht==="belege") {
+    const exportHeader = bfm.length>0 ? `<button class="btn-outline" onclick="exportCSV()">Exportieren</button>` : "";
+    const items = bfm.map(b => {
+      const k = kat(b.kategorie);
+      if (editId===b.id) {
+        const katOpts = KATEGORIEN.map(k=>`<option value="${k.id}"${k.id===state.editData.kategorie?" selected":""}>${k.icon} ${k.label}</option>`).join("");
+        return `
+          <div class="beleg-item">
+            <div class="edit-form">
+              <input class="inp" type="date" value="${state.editData.datum||""}" onchange="updateEdit('datum',this.value)" />
+              <input class="inp" placeholder="Lieferant" value="${state.editData.lieferant||""}" oninput="updateEdit('lieferant',this.value)" />
+              <input class="inp" placeholder="Beschreibung" value="${state.editData.beschreibung||""}" oninput="updateEdit('beschreibung',this.value)" />
+              <div class="form-row">
+                <input class="inp" placeholder="Betrag" value="${state.editData.betrag||""}" oninput="updateEdit('betrag',this.value)" style="flex:1" />
+                <select class="inp" onchange="updateEdit('art',this.value)" style="flex:1">
+                  <option value="ausgabe"${state.editData.art==="ausgabe"?" selected":""}>Ausgabe</option>
+                  <option value="einnahme"${state.editData.art==="einnahme"?" selected":""}>Einnahme</option>
+                </select>
+              </div>
+              <select class="inp" onchange="updateEdit('kategorie',this.value)">${katOpts}</select>
+              <div class="edit-actions">
+                <button class="btn-save" onclick="speicherEdit()">Speichern</button>
+                <button class="btn-cancel" onclick="cancelEdit()">Abbrechen</button>
+              </div>
+            </div>
+          </div>`;
+      }
+      return `
+        <div class="beleg-item">
+          <div class="beleg-header">
+            <div class="beleg-meta">
+              <div>
+                <span class="beleg-tag" style="background:${k.farbe}1A;color:${k.farbe}">${k.icon} ${k.label}</span>
+                <span class="beleg-date">${b.datum}</span>
+              </div>
+              <div class="beleg-name">${b.lieferant||"—"}</div>
+              <div class="beleg-desc">${b.beschreibung||""}</div>
+            </div>
+            <div class="beleg-amount" style="color:${b.art==="ausgabe"?"var(--rouge)":"var(--sage)"}">
+              ${b.art==="ausgabe"?"−":"+"}${euro(b.betrag||0)}
+            </div>
+          </div>
+          <div class="beleg-actions">
+            <button class="btn-sm btn-edit" onclick="startEdit('${b.id}')">✏️ Bearbeiten</button>
+            <button class="btn-sm btn-del" onclick="loescheBeleg('${b.id}')">🗑️ Löschen</button>
+          </div>
+        </div>`;
+    }).join("");
+
+    const emptyState = bfm.length===0 ? `<div class="empty"><div class="empty-icon">🗂️</div><div class="empty-text">Keine Belege in diesem Monat.</div></div>` : "";
+
+    inhalt = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <div style="font-size:13px;color:var(--ink3)">${bfm.length} Belege · ${monatLabel(aktuellerMonat)}</div>
+        ${exportHeader}
+      </div>
+      ${emptyState}${items}`;
+  }
+
+  // ── Neu ──
+  else if (ansicht==="neu") {
+    const katOpts = KATEGORIEN.map(k=>`<option value="${k.id}"${k.id===state.manuell.kategorie?" selected":""}>${k.icon} ${k.label}</option>`).join("");
+    const analyzingBanner = loading ? `<div class="analyzing"><div class="analyzing-dot"></div><span style="font-size:13px;color:var(--plum);font-weight:500">Beleg wird analysiert…</span></div>` : "";
+
+    const keySection = showKeyInput || !state.apiKey ? `
+      <div class="card" style="margin-bottom:14px;border:1.5px solid var(--border)">
+        <div class="section-title" style="margin-bottom:8px">🔑 Anthropic API-Key</div>
+        <p style="font-size:12px;color:var(--ink3);margin-bottom:10px;line-height:1.5">Für die automatische Belegs-Erkennung brauchst du einen API-Key von <strong>anthropic.com</strong>. Einmalig eingeben, dann gespeichert.</p>
+        <input class="inp" type="password" placeholder="sk-ant-…" id="apiKeyInput" value="${state.apiKey}" style="margin-bottom:8px" />
+        <button class="btn-primary" style="padding:10px" onclick="saveApiKey()">Key speichern</button>
+      </div>` : `
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;background:#F0EAF4;border-radius:9px;padding:9px 12px">
+        <span style="font-size:12px;color:var(--plum);font-weight:500">🔑 API-Key hinterlegt</span>
+        <button onclick="state.showKeyInput=!state.showKeyInput;render()" style="background:none;border:none;font-size:11px;color:var(--ink3);cursor:pointer">ändern</button>
+      </div>`;
+
+    inhalt = `
+      ${keySection}
+      ${analyzingBanner}
+      <div class="upload-zone" id="dropzone" onclick="document.getElementById('fileInput').click()">
+        <div class="upload-icon">${loading?"⏳":"📎"}</div>
+        <div class="upload-title">${loading?"Wird analysiert…":"PDF oder Foto hochladen"}</div>
+        <div class="upload-hint">Tippe hier oder ziehe eine Datei rein</div>
+      </div>
+      <input type="file" id="fileInput" accept=".pdf,image/*,.txt" multiple style="display:none" onchange="handleFiles(this.files)" />
+
+      <div class="card">
+        <div class="section-title">Oder manuell eingeben</div>
+        <div class="form-group">
+          <input class="inp" type="date" value="${state.manuell.datum}" onchange="updateManuell('datum',this.value)" />
+          <input class="inp" placeholder="Lieferant (z.B. L'Oréal)" value="${state.manuell.lieferant}" oninput="updateManuell('lieferant',this.value)" />
+          <input class="inp" placeholder="Beschreibung *" value="${state.manuell.beschreibung}" oninput="updateManuell('beschreibung',this.value)" />
+          <div class="form-row">
+            <input class="inp" placeholder="Betrag * (z.B. 289,88)" value="${state.manuell.betrag}" oninput="updateManuell('betrag',this.value)" style="flex:1" />
+            <select class="inp" onchange="updateManuell('art',this.value)" style="flex:1">
+              <option value="ausgabe"${state.manuell.art==="ausgabe"?" selected":""}>Ausgabe</option>
+              <option value="einnahme"${state.manuell.art==="einnahme"?" selected":""}>Einnahme</option>
+            </select>
+          </div>
+          <select class="inp" onchange="updateManuell('kategorie',this.value)">${katOpts}</select>
+          <button class="btn-primary" onclick="speicherManuell()">Beleg speichern</button>
+        </div>
+      </div>`;
+  }
+
+  app.innerHTML = `
+    <div class="header">
+      <div class="header-left">
+        <div class="header-logo">✂️</div>
+        <div>
+          <div class="header-sub">Salon Walenta</div>
+          <div class="header-title">Meine Belege</div>
+        </div>
+      </div>
+      <select class="month-select" onchange="setMonat(this.value)">${monatOptions}</select>
+    </div>
+    <nav class="nav">
+      <button class="nav-btn${ansicht==="dashboard"?" active":""}" onclick="setAnsicht('dashboard')">Übersicht</button>
+      <button class="nav-btn${ansicht==="belege"?" active":""}" onclick="setAnsicht('belege')">Belege</button>
+      <button class="nav-btn${ansicht==="neu"?" active":""}" onclick="setAnsicht('neu')">+ Neu</button>
+    </nav>
+    <main class="main">${inhalt}</main>`;
+
+  // Drag & drop
+  const dz = document.getElementById("dropzone");
+  if (dz) {
+    dz.addEventListener("dragover", e=>{e.preventDefault();dz.classList.add("drag");});
+    dz.addEventListener("dragleave", ()=>dz.classList.remove("drag"));
+    dz.addEventListener("drop", e=>{e.preventDefault();dz.classList.remove("drag");handleFiles(e.dataTransfer.files);});
+  }
+}
+
+// ── Actions ───────────────────────────────────────────────────────────────────
+function setAnsicht(v) { state.ansicht=v; render(); }
+function setMonat(v) { state.aktuellerMonat=v; render(); }
+
+function handleFiles(files) { Array.from(files).forEach(verarbeiteFile); }
+
+function updateManuell(k,v) { state.manuell[k]=v; }
+function speicherManuell() {
+  if (!state.manuell.betrag||!state.manuell.beschreibung) { showToast("Betrag und Beschreibung sind Pflichtfelder","err"); return; }
+  const monat = state.manuell.datum ? state.manuell.datum.substring(0,7) : state.aktuellerMonat;
+  state.belege.unshift({
+    id: Date.now()+Math.random(), ...state.manuell,
+    betrag: parseFloat(state.manuell.betrag.replace(",",".")),
+    monat, dateiname:null, erfasst:new Date().toISOString(),
+  });
+  state.manuell = emptyManuell();
+  speichern(); setAnsicht("belege"); showToast("Beleg gespeichert ✓");
+}
+
+function loescheBeleg(id) {
+  if (!confirm("Beleg wirklich löschen?")) return;
+  state.belege = state.belege.filter(b=>String(b.id)!==String(id));
+  speichern(); render(); showToast("Beleg gelöscht");
+}
+
+function startEdit(id) {
+  const b = state.belege.find(b=>String(b.id)===String(id));
+  if (!b) return;
+  state.editId = b.id; state.editData = {...b}; render();
+}
+function updateEdit(k,v) { state.editData[k]=v; }
+function cancelEdit() { state.editId=null; render(); }
+function speicherEdit() {
+  state.belege = state.belege.map(b=>
+    b.id===state.editId ? {...b,...state.editData, betrag:parseFloat(String(state.editData.betrag).replace(",","."))} : b
+  );
+  state.editId=null; speichern(); render(); showToast("Gespeichert ✓");
+}
+
+function saveApiKey() {
+  const v = document.getElementById("apiKeyInput")?.value?.trim();
+  if (!v) { showToast("Bitte Key eingeben","err"); return; }
+  state.apiKey = v; state.showKeyInput = false;
+  try { localStorage.setItem(API_KEY_KEY, v); } catch(e){}
+  showToast("API-Key gespeichert ✓"); render();
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+laden();
+render();
+</script>
+</body>
+</html>
