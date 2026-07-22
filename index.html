@@ -215,14 +215,24 @@ async function loadProfile(){
   return false;
 }
 async function upsertProfile(data){
-  await sbPost('/rest/v1/profiles',{id:S.userId,...data},S.token);
+  const r=await fetch(SB_URL+'/rest/v1/profiles',{
+    method:'POST',
+    headers:{...sbHeaders(S.token),'Prefer':'resolution=merge-duplicates,return=representation'},
+    body:JSON.stringify({id:S.userId,...data})
+  });
+  return r.json();
 }
 async function loadBelege(){
   const d=await sbGet('/rest/v1/belege?user_id=eq.'+S.userId+'&order=erfasst.desc&select=*',S.token);
   if(Array.isArray(d))S.belege=d;
 }
 async function insertBeleg(b){
-  const d=await sbPost('/rest/v1/belege',{...b,user_id:S.userId},S.token);
+  const r=await fetch(SB_URL+'/rest/v1/belege',{
+    method:'POST',
+    headers:{...sbHeaders(S.token),'Prefer':'return=representation'},
+    body:JSON.stringify({...b,user_id:S.userId})
+  });
+  const d=await r.json();
   if(Array.isArray(d)&&d[0])S.belege.unshift(d[0]);
   else await loadBelege();
 }
@@ -393,15 +403,15 @@ function render(){
     const logoSec=d.logo
       ?'<img src="'+d.logo+'" class="logo-preview" style="margin-bottom:8px"/><br><button onclick="S.draft.logo=\'\';render()" style="background:none;border:none;color:var(--red);font-size:12px;cursor:pointer">Entfernen</button>'
       :'<div style="font-size:28px;margin-bottom:6px">🖼️</div><div style="font-size:13px;color:var(--ink3)">Logo hochladen (optional)</div>';
-    const katR=d.kategorien.map((k,i)=>'<div class="kat-row"><input class="kat-emoji-inp" value="'+k.icon+'" oninput="S.draft.kategorien['+i+'].icon=this.value" maxlength="2"/><input class="kat-name-inp" value="'+k.label+'" oninput="S.draft.kategorien['+i+'].label=this.value" placeholder="Kategorie"/><button class="kat-del" onclick="S.draft.kategorien.splice('+i+',1);render()">✕</button></div>').join('');
+    const katR=d.kategorien.map((k,i)=>'<div class="kat-row"><input class="kat-emoji-inp" value="'+k.icon+'" id="ke'+i+'" maxlength="2"/><input class="kat-name-inp" value="'+k.label+'" id="kn'+i+'" placeholder="Kategorie"/><button class="kat-del" onclick="removeKat('+i+')">✕</button></div>').join('');
     app.innerHTML='<div class="fullscreen light-screen">'
       +'<div class="setup-header"><div style="font-size:44px;margin-bottom:8px">💼</div><h1>Einrichtung</h1><p>Richte deine App ein — dauert 2 Minuten.</p></div>'
-      +'<div class="setup-section"><div class="setup-label">Betriebsname *</div><input class="setup-inp" placeholder="z.B. Salon Walenta" value="'+d.name+'" oninput="S.draft.name=this.value"/></div>'
+      +'<div class="setup-section"><div class="setup-label">Betriebsname *</div><input class="setup-inp" id="sname" placeholder="z.B. Salon Walenta" value="'+d.name+'"/></div>'
       +'<div class="setup-section"><div class="setup-label">Logo</div><div class="logo-upload-zone" onclick="document.getElementById(\'li\').click()">'+logoSec+'</div><input type="file" id="li" accept="image/*" style="display:none" onchange="handleLogoUpload(this.files[0])"/></div>'
-      +'<div class="setup-section"><div class="setup-label">Emoji (falls kein Logo)</div><input class="setup-inp" placeholder="💼" value="'+d.emoji+'" oninput="S.draft.emoji=this.value" style="font-size:24px;text-align:center"/></div>'
-      +'<div class="setup-section"><div class="setup-label">PIN (4 Ziffern) *</div><input class="setup-inp" type="password" inputmode="numeric" maxlength="4" placeholder="z.B. 1234" value="'+d.pin+'" oninput="S.draft.pin=this.value"/></div>'
-      +'<div class="setup-section"><div class="setup-label">Kategorien</div><div class="kat-list">'+katR+'</div><button class="add-kat-btn" onclick="S.draft.kategorien.push({id:\'k\'+Date.now(),icon:\'📦\',label:\'\'});render()">+ Hinzufügen</button></div>'
-      +'<button class="setup-save" onclick="saveSetup()">App starten →</button>'
+      +'<div class="setup-section"><div class="setup-label">Emoji (falls kein Logo)</div><input class="setup-inp" id="semoji" placeholder="💼" value="'+d.emoji+'" style="font-size:24px;text-align:center"/></div>'
+      +'<div class="setup-section"><div class="setup-label">PIN (4 Ziffern) *</div><input class="setup-inp" id="spin" type="password" inputmode="numeric" maxlength="4" placeholder="z.B. 1234" value="'+d.pin+'"/></div>'
+      +'<div class="setup-section"><div class="setup-label">Kategorien</div><div class="kat-list" id="katlist">'+katR+'</div><button class="add-kat-btn" onclick="addKat()">+ Hinzufügen</button></div>'
+      +'<button class="setup-save" onclick="collectAndSave()">App starten →</button>'
       +'<div class="ai-badge">✦ AI Circle Community Tool ✦</div>'
       +'</div>';
     return;
@@ -484,6 +494,38 @@ function render(){
     dz.addEventListener('dragleave',()=>dz.classList.remove('drag'));
     dz.addEventListener('drop',e=>{e.preventDefault();dz.classList.remove('drag');Array.from(e.dataTransfer.files).forEach(verarbeiteFile);});
   }
+}
+
+function addKat(){
+  S.draft.kategorien.push({id:'k'+Date.now(),icon:'📦',label:''});
+  render();
+}
+function removeKat(i){
+  // collect current values first
+  S.draft.kategorien.forEach((_,idx)=>{
+    const e=document.getElementById('ke'+idx);
+    const n=document.getElementById('kn'+idx);
+    if(e)S.draft.kategorien[idx].icon=e.value;
+    if(n)S.draft.kategorien[idx].label=n.value;
+  });
+  S.draft.kategorien.splice(i,1);
+  render();
+}
+async function collectAndSave(){
+  // collect all field values before saving
+  const name=document.getElementById('sname')?.value?.trim();
+  const emoji=document.getElementById('semoji')?.value||'💼';
+  const pin=document.getElementById('spin')?.value;
+  S.draft.kategorien.forEach((_,i)=>{
+    const e=document.getElementById('ke'+i);
+    const n=document.getElementById('kn'+i);
+    if(e)S.draft.kategorien[i].icon=e.value;
+    if(n)S.draft.kategorien[i].label=n.value;
+  });
+  S.draft.name=name||'';
+  S.draft.emoji=emoji;
+  S.draft.pin=pin||'';
+  await saveSetup();
 }
 
 async function doManuell(){
