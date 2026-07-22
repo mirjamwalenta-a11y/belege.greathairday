@@ -307,6 +307,9 @@ async function doLogout(){
   S.screen='auth';render();
 }
 async function afterLogin(){
+  if(!S.token||!S.userId){
+    S.screen='auth';render();return;
+  }
   const has=await loadProfile();
   if(!has){
     S.screen='setup';
@@ -453,6 +456,7 @@ function render(){
       +'<div class="setup-section"><div class="setup-label">Kategorien</div><div class="kat-list" id="katlist">'+katR+'</div><button class="add-kat-btn" onclick="addKat()">+ Hinzufügen</button></div>'
       +'<button class="setup-save" onclick="collectAndSave()">App starten →</button>'
       +'<div class="ai-badge">✦ AI Circle Community Tool ✦</div>'
+      +'<button onclick="doLogout()" style="background:none;border:none;color:var(--ink3);font-size:12px;cursor:pointer;margin-top:8px">← Abmelden</button>'
       +'</div>';
     return;
   }
