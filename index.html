@@ -141,15 +141,18 @@ function sbHeaders(token){
   return h;
 }
 async function sbPost(path,body,token){
-  const r=await fetch(SB_URL+path,{method:'POST',headers:sbHeaders(token),body:JSON.stringify(body)});
+  let r=await fetch(SB_URL+path,{method:'POST',headers:sbHeaders(token),body:JSON.stringify(body)});
+  if(r.status===401&&token){try{await refreshToken();r=await fetch(SB_URL+path,{method:'POST',headers:sbHeaders(S.token),body:JSON.stringify(body)});}catch(e){S.screen='auth';render();throw e;}}
   return r.json();
 }
 async function sbGet(path,token){
-  const r=await fetch(SB_URL+path,{headers:{...sbHeaders(token),'Accept':'application/json'}});
+  let r=await fetch(SB_URL+path,{headers:{...sbHeaders(token),'Accept':'application/json'}});
+  if(r.status===401){try{await refreshToken();r=await fetch(SB_URL+path,{headers:{...sbHeaders(S.token),'Accept':'application/json'}});}catch(e){S.screen='auth';render();throw e;}}
   return r.json();
 }
 async function sbPatch(path,body,token){
-  const r=await fetch(SB_URL+path,{method:'PATCH',headers:{...sbHeaders(token),'Prefer':'return=representation'},body:JSON.stringify(body)});
+  let r=await fetch(SB_URL+path,{method:'PATCH',headers:{...sbHeaders(token),'Prefer':'return=representation'},body:JSON.stringify(body)});
+  if(r.status===401){try{await refreshToken();r=await fetch(SB_URL+path,{method:'PATCH',headers:{...sbHeaders(S.token),'Prefer':'return=representation'},body:JSON.stringify(body)});}catch(e){S.screen='auth';render();throw e;}}
   return r.json();
 }
 async function sbDelete(path,token){
@@ -165,6 +168,17 @@ async function signUp(email,password){
 async function signIn(email,password){
   const d=await sbPost('/auth/v1/token?grant_type=password',{email,password});
   if(d.error)throw new Error(d.error.message||d.msg||'Fehler');
+  if(d.refresh_token)try{localStorage.setItem('sb_refresh',d.refresh_token);}catch(e){}
+  return d;
+}
+async function refreshToken(){
+  const rt=localStorage.getItem('sb_refresh');
+  if(!rt)throw new Error('Kein Refresh-Token');
+  const d=await sbPost('/auth/v1/token?grant_type=refresh_token',{refresh_token:rt});
+  if(d.error)throw new Error(d.error.message||'Token abgelaufen');
+  S.token=d.access_token;
+  if(d.refresh_token)try{localStorage.setItem('sb_refresh',d.refresh_token);}catch(e){}
+  saveLocal();
   return d;
 }
 async function signOut(token){
@@ -409,9 +423,17 @@ function exportCSV(){
 // ── Boot ──────────────────────────────────────────────────────────────────────
 async function boot(){
   loadLocal();
-  if(S.token&&S.userId){
-    try{await afterLogin();}
-    catch(e){S.token=null;S.userId=null;S.screen='auth';render();}
+  if(S.userId){
+    // Refresh-Token versuchen wenn vorhanden
+    if(!S.token||localStorage.getItem('sb_refresh')){
+      try{await refreshToken();}catch(e){}
+    }
+    if(S.token){
+      try{await afterLogin();}
+      catch(e){S.token=null;S.userId=null;S.screen='auth';render();}
+    }else{
+      S.screen='auth';render();
+    }
   }else{
     S.screen='auth';render();
   }
@@ -514,7 +536,7 @@ function render(){
       +(S.loading?'<div class="analyzing"><div class="analyzing-dot"></div><span style="font-size:13px;color:var(--accent);font-weight:500">Beleg wird analysiert…</span></div>':'')
       +'<div class="upload-zone" id="dz" onclick="document.getElementById(\'fi\').click()"><div style="font-size:32px;margin-bottom:8px">'+(S.loading?'⏳':'📎')+'</div><div style="font-size:14px;font-weight:600;color:var(--accent)">'+(S.loading?'Wird analysiert…':'PDF oder Foto hochladen')+'</div><div style="font-size:12px;color:var(--ink3);margin-top:4px">Tippe hier oder ziehe eine Datei rein</div></div>'
       +'<input type="file" id="fi" accept=".pdf,image/*,.txt" multiple style="display:none" onchange="Array.from(this.files).forEach(verarbeiteFile);this.value=\'\'"/>'
-      +'<div class="card"><div class="section-title">Oder manuell eingeben</div><div class="form-group"><input class="inp" type="date" value="'+S.manuell.datum+'" onchange="S.manuell.datum=this.value"/><input class="inp" placeholder="Lieferant" value="'+S.manuell.lieferant+'" oninput="S.manuell.lieferant=this.value"/><input class="inp" placeholder="Beschreibung *" value="'+S.manuell.beschreibung+'" oninput="S.manuell.beschreibung=this.value"/><div class="form-row"><input class="inp" placeholder="Betrag *" value="'+S.manuell.betrag+'" oninput="S.manuell.betrag=this.value" style="flex:1"/><select class="inp" onchange="S.manuell.art=this.value" style="flex:1"><option value="ausgabe">Ausgabe</option><option value="einnahme">Einnahme</option></select></div><select class="inp" onchange="S.manuell.kategorie=this.value">'+mO+'</select><button class="btn-primary" onclick="doManuell()">Beleg speichern</button></div></div>';
+      +'<div class="card"><div class="section-title">Oder manuell eingeben</div><div class="form-group"><input class="inp" id="manuell-datum" type="date" value="'+S.manuell.datum+'" onchange="S.manuell.datum=this.value"/><input class="inp" id="manuell-lieferant" placeholder="Lieferant" value="'+S.manuell.lieferant+'" oninput="S.manuell.lieferant=this.value"/><input class="inp" id="manuell-beschreibung" placeholder="Beschreibung *" value="'+S.manuell.beschreibung+'" oninput="S.manuell.beschreibung=this.value"/><div class="form-row"><input class="inp" id="manuell-betrag" placeholder="Betrag *" inputmode="decimal" value="'+S.manuell.betrag+'" oninput="S.manuell.betrag=this.value" style="flex:1"/><select class="inp" id="manuell-art" onchange="S.manuell.art=this.value" style="flex:1"><option value="ausgabe">Ausgabe</option><option value="einnahme">Einnahme</option></select></div><select class="inp" id="manuell-kategorie" onchange="S.manuell.kategorie=this.value">'+mO+'</select><button class="btn-primary" onclick="doManuell()">Beleg speichern</button></div></div>';
   }
 
   else if(ansicht==='einstellungen'){
@@ -573,11 +595,26 @@ async function collectAndSave(){
 }
 
 async function doManuell(){
+  // Felder direkt aus dem DOM lesen (sicherer auf Mobile)
+  const datumEl=document.querySelector('#manuell-datum');
+  const lieferantEl=document.querySelector('#manuell-lieferant');
+  const beschEl=document.querySelector('#manuell-beschreibung');
+  const betragEl=document.querySelector('#manuell-betrag');
+  const artEl=document.querySelector('#manuell-art');
+  const katEl=document.querySelector('#manuell-kategorie');
+  if(datumEl)S.manuell.datum=datumEl.value;
+  if(lieferantEl)S.manuell.lieferant=lieferantEl.value;
+  if(beschEl)S.manuell.beschreibung=beschEl.value;
+  if(betragEl)S.manuell.betrag=betragEl.value;
+  if(artEl)S.manuell.art=artEl.value;
+  if(katEl)S.manuell.kategorie=katEl.value;
   if(!S.manuell.betrag||!S.manuell.beschreibung){toast('Betrag und Beschreibung sind Pflichtfelder','err');return;}
   const kats=S.profile?.kategorien||DEFAULT_KATS;
   const monat=S.manuell.datum?S.manuell.datum.substring(0,7):S.monat;
-  await insertBeleg({datum:S.manuell.datum||new Date().toISOString().split('T')[0],betrag:parseFloat(S.manuell.betrag.replace(',','.')),art:S.manuell.art,lieferant:S.manuell.lieferant,kategorie:S.manuell.kategorie||kats[0].id,beschreibung:S.manuell.beschreibung,monat});
-  S.manuell=emptyM();S.ansicht='belege';render();toast('Beleg gespeichert ✓');
+  try{
+    await insertBeleg({datum:S.manuell.datum||new Date().toISOString().split('T')[0],betrag:parseFloat(String(S.manuell.betrag).replace(',','.')),art:S.manuell.art||'ausgabe',lieferant:S.manuell.lieferant||'',kategorie:S.manuell.kategorie||kats[0].id,beschreibung:S.manuell.beschreibung,monat});
+    S.manuell=emptyM();S.ansicht='belege';render();toast('Beleg gespeichert ✓');
+  }catch(e){toast('Fehler beim Speichern: '+e.message,'err');}
 }
 async function doEdit(){
   const d=S.editData;
