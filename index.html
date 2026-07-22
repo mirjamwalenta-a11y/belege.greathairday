@@ -196,8 +196,21 @@ function eur(n){return(n||0).toLocaleString('de-AT',{style:'currency',currency:'
 function kk(id){const kats=S.profile?.kategorien||DEFAULT_KATS;return kats.find(k=>k.id===id)||kats[kats.length-1];}
 
 // ── Storage ────────────────────────────────────────────────────────────────────
-function saveLocal(){try{if(S.token)localStorage.setItem('sb_token',S.token);if(S.userId)localStorage.setItem('sb_uid',S.userId);if(S.apiKey)localStorage.setItem('sb_apikey',S.apiKey);}catch(e){}}
-function loadLocal(){try{S.token=localStorage.getItem('sb_token');S.userId=localStorage.getItem('sb_uid');S.apiKey=localStorage.getItem('sb_apikey')||'';}catch(e){}}
+function saveLocal(){
+  try{
+    if(S.token){localStorage.setItem('sb_token',S.token);sessionStorage.setItem('sb_token',S.token);}
+    if(S.userId){localStorage.setItem('sb_uid',S.userId);sessionStorage.setItem('sb_uid',S.userId);}
+    if(S.apiKey)localStorage.setItem('sb_apikey',S.apiKey);
+  }catch(e){}
+}
+function loadLocal(){
+  try{
+    // sessionStorage first (survives tab refresh), then localStorage
+    S.token=sessionStorage.getItem('sb_token')||localStorage.getItem('sb_token');
+    S.userId=sessionStorage.getItem('sb_uid')||localStorage.getItem('sb_uid');
+    S.apiKey=localStorage.getItem('sb_apikey')||'';
+  }catch(e){}
+}
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
 let tTimer;
@@ -279,7 +292,9 @@ async function doRegister(){
   S.authErr='';render();
   if(!S.authName.trim()){S.authErr='Bitte Name eingeben';render();return;}
   try{
-    const d=await signUp(S.authEmail,S.authPass);
+    await signUp(S.authEmail,S.authPass);
+    // Nach Registrierung sofort einloggen um gültigen Token zu bekommen
+    const d=await signIn(S.authEmail,S.authPass);
     S.token=d.access_token;S.userId=d.user?.id;
     saveLocal();
     await afterLogin();
