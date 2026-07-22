@@ -3,11 +3,12 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
-  <meta name="theme-color" content="#1A1A2E"/>
+  <meta name="theme-color" content="#2C2438"/>
   <meta name="mobile-web-app-capable" content="yes"/>
   <meta name="apple-mobile-web-app-capable" content="yes"/>
   <title>Meine Belege</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
     :root{
@@ -17,16 +18,27 @@
       --red:#B85C4A;--green:#4A8A6C;
       --border:#E4DCE8;--radius:14px;--shadow:0 1px 6px rgba(44,36,56,0.09);
     }
-    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
     html,body{height:100%;background:var(--canvas);font-family:'Inter',sans-serif;color:var(--ink);-webkit-font-smoothing:antialiased}
     body{display:flex;flex-direction:column;max-width:480px;margin:0 auto;min-height:100dvh}
-
     .fullscreen{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:1000;padding:24px;max-width:480px;margin:0 auto}
-    .pin-screen{background:var(--accent)}
-    .setup-screen{background:var(--canvas);justify-content:flex-start;padding-top:40px;overflow-y:auto}
+    .dark-screen{background:var(--accent)}
+    .light-screen{background:var(--canvas);justify-content:flex-start;padding-top:40px;overflow-y:auto}
+
+    /* AUTH */
+    .auth-logo{font-size:48px;margin-bottom:8px}
+    .auth-logo-img{width:140px;height:60px;object-fit:contain;margin-bottom:12px;filter:brightness(0) invert(1)}
+    .auth-title{color:#fff;font-size:22px;font-weight:700;margin-bottom:6px}
+    .auth-sub{color:var(--accentlight);font-size:13px;margin-bottom:28px;text-align:center}
+    .auth-form{width:100%;display:flex;flex-direction:column;gap:10px}
+    .auth-inp{width:100%;padding:13px 14px;border:none;border-radius:10px;font-size:15px;font-family:inherit;background:rgba(255,255,255,0.12);color:#fff;outline:none}
+    .auth-inp::placeholder{color:rgba(255,255,255,0.5)}
+    .auth-btn{width:100%;padding:14px;border:none;border-radius:10px;background:#fff;color:var(--accent);font-size:15px;font-weight:700;font-family:inherit;cursor:pointer;margin-top:4px}
+    .auth-switch{color:var(--accentlight);font-size:13px;margin-top:14px;cursor:pointer;text-align:center}
+    .auth-switch span{color:#fff;font-weight:600;text-decoration:underline}
+    .auth-error{color:#F4A49A;font-size:12px;text-align:center;min-height:18px}
 
     /* PIN */
-    .pin-logo{width:120px;height:60px;object-fit:contain;margin-bottom:16px;filter:brightness(0) invert(1)}
+    .pin-logo-img{width:140px;height:60px;object-fit:contain;margin-bottom:12px;filter:brightness(0) invert(1)}
     .pin-logo-emoji{font-size:48px;margin-bottom:8px}
     .pin-brand{color:var(--accentlight);font-size:11px;letter-spacing:2px;text-transform:uppercase;margin-bottom:4px}
     .pin-title{color:#fff;font-size:22px;font-weight:700;margin-bottom:28px}
@@ -35,9 +47,10 @@
     .pin-dot.filled{background:#fff;border-color:#fff}
     .pin-error{color:#F4A49A;font-size:13px;margin-bottom:16px;min-height:20px;text-align:center}
     .pin-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;width:240px}
-    .pin-btn{aspect-ratio:1;border-radius:50%;border:none;background:rgba(255,255,255,0.1);color:#fff;font-size:22px;font-weight:600;font-family:inherit;cursor:pointer;transition:background 0.1s;display:flex;align-items:center;justify-content:center}
+    .pin-btn{aspect-ratio:1;border-radius:50%;border:none;background:rgba(255,255,255,0.1);color:#fff;font-size:22px;font-weight:600;font-family:inherit;cursor:pointer;display:flex;align-items:center;justify-content:center}
     .pin-btn:active{background:rgba(255,255,255,0.25)}
     .pin-btn.empty{background:transparent;cursor:default}
+    .pin-logout{color:var(--accentlight);font-size:12px;margin-top:20px;cursor:pointer;background:none;border:none}
 
     /* SETUP */
     .setup-header{text-align:center;margin-bottom:28px;width:100%}
@@ -45,32 +58,30 @@
     .setup-header p{font-size:13px;color:var(--ink3);line-height:1.5}
     .setup-section{width:100%;margin-bottom:20px}
     .setup-label{font-size:11px;font-weight:600;color:var(--ink3);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px}
-    .setup-inp{width:100%;padding:12px 14px;border:1.5px solid var(--border);border-radius:10px;font-size:15px;font-family:inherit;background:#fff;color:var(--ink);outline:none;transition:border-color 0.15s}
-    .setup-inp:focus{border-color:var(--accent)}
-    .logo-upload-zone{border:2px dashed var(--border);border-radius:12px;padding:20px;text-align:center;cursor:pointer;background:#fff;transition:border-color 0.2s}
-    .logo-upload-zone:hover{border-color:var(--accent)}
-    .logo-preview{max-width:200px;max-height:80px;object-fit:contain;margin:0 auto;display:block}
+    .setup-inp{width:100%;padding:12px 14px;border:1.5px solid var(--border);border-radius:10px;font-size:15px;font-family:inherit;background:#fff;color:var(--ink);outline:none}
+    .logo-upload-zone{border:2px dashed var(--border);border-radius:12px;padding:20px;text-align:center;cursor:pointer;background:#fff}
+    .logo-preview{max-width:180px;max-height:70px;object-fit:contain;margin:0 auto;display:block}
     .kat-list{display:flex;flex-direction:column;gap:8px}
     .kat-row{display:flex;gap:8px;align-items:center}
     .kat-emoji-inp{width:48px;padding:10px;border:1.5px solid var(--border);border-radius:8px;font-size:18px;text-align:center;background:#fff;outline:none}
     .kat-name-inp{flex:1;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit;background:#fff;color:var(--ink);outline:none}
-    .kat-del{width:36px;height:36px;border:none;background:#FEF0EE;color:var(--red);border-radius:8px;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center}
+    .kat-del{width:36px;height:36px;border:none;background:#FEF0EE;color:var(--red);border-radius:8px;cursor:pointer;font-size:16px}
     .add-kat-btn{width:100%;padding:10px;border:1.5px dashed var(--border);border-radius:8px;background:none;color:var(--ink3);font-size:13px;font-family:inherit;cursor:pointer;margin-top:4px}
     .setup-save{width:100%;background:var(--accent);color:#fff;border:none;border-radius:var(--radius);padding:15px;font-size:15px;font-weight:700;font-family:inherit;cursor:pointer;margin-top:8px}
-    .ai-circle-badge{text-align:center;margin-top:20px;margin-bottom:8px}
-    .ai-circle-badge span{font-size:11px;color:var(--ink3);letter-spacing:1px}
+    .ai-badge{text-align:center;margin-top:16px;font-size:11px;color:var(--ink3);letter-spacing:1px}
 
     /* HEADER */
     .header{background:var(--accent);padding:12px 18px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;box-shadow:0 2px 12px rgba(44,36,56,0.25)}
     .header-left{display:flex;align-items:center;gap:10px}
-    .header-logo-img{height:36px;width:auto;object-fit:contain;filter:brightness(0) invert(1);opacity:0.92}
-    .header-logo-emoji{font-size:22px;line-height:1}
-    .header-title{color:#fff;font-size:16px;font-weight:700;letter-spacing:-0.3px}
+    .header-logo-img{height:34px;width:auto;object-fit:contain;filter:brightness(0) invert(1);opacity:0.92}
+    .header-logo-emoji{font-size:22px}
+    .header-title{color:#fff;font-size:16px;font-weight:700}
     .header-sub{color:var(--accentlight);font-size:10px;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:1px}
     .month-select{background:var(--accent2);color:#fff;border:none;border-radius:8px;padding:6px 8px;font-size:12px;font-family:inherit;cursor:pointer;outline:none}
+    .sync-indicator{font-size:10px;color:var(--accentlight);margin-top:2px}
 
     .nav{background:var(--surface);border-bottom:1px solid var(--border);display:flex;position:sticky;top:62px;z-index:99}
-    .nav-btn{flex:1;padding:12px 4px;border:none;background:none;cursor:pointer;font-size:12px;font-weight:500;color:var(--ink3);font-family:inherit;border-bottom:2px solid transparent;transition:color 0.15s,border-color 0.15s}
+    .nav-btn{flex:1;padding:12px 4px;border:none;background:none;cursor:pointer;font-size:12px;font-weight:500;color:var(--ink3);font-family:inherit;border-bottom:2px solid transparent}
     .nav-btn.active{color:var(--accent);font-weight:700;border-bottom-color:var(--accent)}
 
     .main{flex:1;padding:18px 16px 100px;overflow-y:auto}
@@ -80,7 +91,7 @@
     .stat-value{font-size:20px;font-weight:700;letter-spacing:-0.5px}
     .stat-sub{font-size:11px;color:var(--ink3);margin-top:3px}
     .bar-track{background:#F0EAF4;border-radius:4px;height:5px;margin-top:4px}
-    .bar-fill{border-radius:4px;height:5px;transition:width 0.4s ease}
+    .bar-fill{border-radius:4px;height:5px;transition:width 0.4s}
     .beleg-item{background:var(--surface);border-radius:var(--radius);padding:14px;margin-bottom:10px;box-shadow:var(--shadow)}
     .beleg-tag{display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:600;border-radius:6px;padding:2px 7px;margin-bottom:5px}
     .beleg-name{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -92,17 +103,13 @@
     .btn-del{background:#FEF0EE;color:var(--red)}
     .empty{text-align:center;padding:48px 20px;color:var(--ink3)}
     .empty-icon{font-size:40px;margin-bottom:12px}
-    .btn-primary{width:100%;background:var(--accent);color:#fff;border:none;border-radius:var(--radius);padding:14px;font-size:14px;font-weight:600;font-family:inherit;cursor:pointer;transition:opacity 0.15s}
-    .btn-primary:active{opacity:0.85}
+    .btn-primary{width:100%;background:var(--accent);color:#fff;border:none;border-radius:var(--radius);padding:14px;font-size:14px;font-weight:600;font-family:inherit;cursor:pointer}
     .btn-outline{background:none;border:1.5px solid var(--accent);color:var(--accent);border-radius:8px;padding:5px 12px;font-size:12px;font-weight:600;font-family:inherit;cursor:pointer}
-    .upload-zone{border:2px dashed var(--accentlight);border-radius:var(--radius);padding:32px 20px;text-align:center;cursor:pointer;background:var(--surface);margin-bottom:16px;transition:background 0.2s,border-color 0.2s}
+    .upload-zone{border:2px dashed var(--accentlight);border-radius:var(--radius);padding:32px 20px;text-align:center;cursor:pointer;background:var(--surface);margin-bottom:16px}
     .upload-zone.drag{background:#F0EAF4;border-color:var(--accent)}
-    .upload-icon{font-size:32px;margin-bottom:8px}
-    .upload-title{font-size:14px;font-weight:600;color:var(--accent)}
-    .upload-hint{font-size:12px;color:var(--ink3);margin-top:4px}
     .form-group{display:flex;flex-direction:column;gap:9px}
     .form-row{display:flex;gap:9px}
-    .inp{width:100%;padding:11px 12px;border:1.5px solid var(--border);border-radius:9px;font-size:14px;font-family:inherit;background:#FAFAF8;color:var(--ink);outline:none;transition:border-color 0.15s}
+    .inp{width:100%;padding:11px 12px;border:1.5px solid var(--border);border-radius:9px;font-size:14px;font-family:inherit;background:#FAFAF8;color:var(--ink);outline:none}
     .inp:focus{border-color:var(--accent)}
     select.inp{cursor:pointer}
     .section-title{font-size:12px;font-weight:600;color:var(--ink2);margin-bottom:10px}
@@ -110,281 +117,401 @@
     .edit-actions{display:flex;gap:8px;margin-top:4px}
     .btn-save{flex:1;background:var(--accent);color:#fff;border:none;border-radius:8px;padding:10px;font-size:13px;font-weight:600;font-family:inherit;cursor:pointer}
     .btn-cancel{flex:1;background:#F0EAF4;color:var(--ink2);border:none;border-radius:8px;padding:10px;font-size:13px;font-family:inherit;cursor:pointer}
-    .toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:var(--accent);color:#fff;border-radius:10px;padding:11px 22px;font-size:13px;font-weight:600;box-shadow:0 4px 20px rgba(44,36,56,0.3);z-index:9999;animation:toastIn 0.2s ease}
+    .toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:var(--accent);color:#fff;border-radius:10px;padding:11px 22px;font-size:13px;font-weight:600;box-shadow:0 4px 20px rgba(44,36,56,0.3);z-index:9999;animation:toastIn 0.2s ease;white-space:nowrap}
     .toast.err{background:var(--red)}
     @keyframes toastIn{from{opacity:0;transform:translateX(-50%) translateY(8px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
     .spinner{width:36px;height:36px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.7s linear infinite}
+    .spinner-sm{width:16px;height:16px;border:2px solid rgba(255,255,255,0.3);border-top-color:#fff;border-radius:50%;animation:spin 0.7s linear infinite;display:inline-block}
     @keyframes spin{to{transform:rotate(360deg)}}
     .analyzing{display:flex;align-items:center;gap:8px;background:#F0EAF4;border-radius:9px;padding:12px 14px;margin-bottom:14px}
     .analyzing-dot{width:8px;height:8px;background:var(--accent);border-radius:50%;animation:pulse 0.8s ease-in-out infinite alternate}
     @keyframes pulse{to{opacity:0.3}}
+    .key-section{background:#F0EAF4;border-radius:9px;padding:9px 12px;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between}
   </style>
 </head>
 <body>
-<div id="app" style="display:flex;align-items:center;justify-content:center;height:100dvh"><div class="spinner"></div></div>
+<div id="app" style="display:flex;align-items:center;justify-content:center;height:100dvh;flex-direction:column;gap:12px">
+  <div class="spinner"></div>
+  <div style="color:var(--ink3);font-size:13px">Wird geladen…</div>
+</div>
+
 <script>
-const STORAGE_KEY="aicircle-belege-v1";
-const SETUP_KEY="aicircle-setup-v1";
-const API_KEY_KEY="aicircle-apikey";
-const SESSION_KEY="aicircle-session";
-const MONATE=["Jänner","Februar","März","April","Mai","Juni","Juli","August","September","Oktober","November","Dezember"];
-const DEFAULT_KATEGORIEN=[
-  {id:"k1",icon:"🛒",label:"Einkauf & Material"},
-  {id:"k2",icon:"🏠",label:"Miete & Betriebskosten"},
-  {id:"k3",icon:"👥",label:"Personal & Lohn"},
-  {id:"k4",icon:"🔧",label:"Geräte & Werkzeug"},
-  {id:"k5",icon:"📱",label:"Marketing & Website"},
-  {id:"k6",icon:"📋",label:"Versicherung & Steuer"},
-  {id:"k7",icon:"📦",label:"Sonstiges"},
+// ── Supabase Config ───────────────────────────────────────────────────────────
+const SUPABASE_URL = 'https://lpuxxvfrrcnbuzafscyk.supabase.co';
+const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxwdXh2dmZycmNuYnV6YWZzY3lrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ2ODIxNDcsImV4cCI6MjEwMDI1ODE0N30.6VZUmmXj_x3Q8J55s_tbOHcW5-U5OXllGoEBhypaVfI';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+
+const MONATE = ['Jänner','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
+const API_KEY_STORE = 'aicircle-apikey';
+const DEFAULT_KATS = [
+  {id:'k1',icon:'🛒',label:'Einkauf & Material'},
+  {id:'k2',icon:'🏠',label:'Miete & Betriebskosten'},
+  {id:'k3',icon:'👥',label:'Personal & Lohn'},
+  {id:'k4',icon:'🔧',label:'Geräte & Werkzeug'},
+  {id:'k5',icon:'📱',label:'Marketing & Website'},
+  {id:'k6',icon:'📋',label:'Versicherung & Steuer'},
+  {id:'k7',icon:'📦',label:'Sonstiges'},
 ];
 
-let state={
-  screen:"loading",setup:null,
-  pinInput:"",pinError:"",
-  belege:[],ansicht:"dashboard",
-  aktuellerMonat:getCurrentMonat(),
-  editId:null,editData:{},
-  manuell:emptyManuell(),
-  loading:false,apiKey:"",showKeyInput:false,
-  setupDraft:null,
+let state = {
+  screen: 'loading',
+  user: null,
+  profile: null,
+  pinInput: '', pinError: '',
+  belege: [],
+  ansicht: 'dashboard',
+  aktuellerMonat: getMonat(),
+  editId: null, editData: {},
+  manuell: emptyManuell(),
+  loading: false, syncing: false,
+  apiKey: '', showKeyInput: false,
+  authMode: 'login',
+  authEmail: '', authPassword: '', authName: '', authError: '',
+  setupDraft: null,
 };
 
-function emptyManuell(){return{datum:"",betrag:"",art:"ausgabe",lieferant:"",kategorie:"",beschreibung:""};}
-function getCurrentMonat(){const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");}
-function monatLabel(k){if(!k)return"";const[y,m]=k.split("-");return MONATE[parseInt(m)-1]+" "+y;}
-function euro(n){return(n||0).toLocaleString("de-AT",{style:"currency",currency:"EUR"});}
-function kat(id){return(state.setup?.kategorien||DEFAULT_KATEGORIEN).find(k=>k.id===id)||(state.setup?.kategorien||DEFAULT_KATEGORIEN).slice(-1)[0];}
+function emptyManuell(){return{datum:'',betrag:'',art:'ausgabe',lieferant:'',kategorie:'',beschreibung:''};}
+function getMonat(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');}
+function monatLabel(k){if(!k)return'';const[y,m]=k.split('-');return MONATE[parseInt(m)-1]+' '+y;}
+function euro(n){return(n||0).toLocaleString('de-AT',{style:'currency',currency:'EUR'});}
+function kat(id){const kats=state.profile?.kategorien||DEFAULT_KATS;return kats.find(k=>k.id===id)||kats[kats.length-1];}
 
-function laden(){
-  try{
-    const sess=sessionStorage.getItem(SESSION_KEY);
-    const raw=localStorage.getItem(STORAGE_KEY);
-    if(raw)state.belege=JSON.parse(raw);
-    const key=localStorage.getItem(API_KEY_KEY);
-    if(key)state.apiKey=key;
-    const setupRaw=localStorage.getItem(SETUP_KEY);
-    if(setupRaw){
-      state.setup=JSON.parse(setupRaw);
-      state.screen=sess==="ok"?"app":"pin";
-    }else{
-      state.screen="setup";
-      state.setupDraft={name:"",logo:"",emoji:"💼",pin:"",kategorien:DEFAULT_KATEGORIEN.map(k=>({...k}))};
-    }
-  }catch(e){
-    state.screen="setup";
-    state.setupDraft={name:"",logo:"",emoji:"💼",pin:"",kategorien:DEFAULT_KATEGORIEN.map(k=>({...k}))};
-  }
-}
-
-function speichern(){try{localStorage.setItem(STORAGE_KEY,JSON.stringify(state.belege));}catch(e){}}
-
-function pinPress(digit){
-  if(state.pinInput.length>=4)return;
-  state.pinInput+=digit;
-  if(state.pinInput.length===4){
-    if(state.pinInput===state.setup.pin){
-      state.screen="app";state.pinError="";
-      try{sessionStorage.setItem(SESSION_KEY,"ok");}catch(e){}
-    }else{
-      state.pinError="Falscher PIN — nochmal versuchen.";
-      setTimeout(()=>{state.pinInput="";state.pinError="";render();},900);
-      state.pinInput="";
-    }
-  }
-  render();
-}
-function pinDel(){if(state.pinInput.length>0){state.pinInput=state.pinInput.slice(0,-1);render();}}
-
-function handleLogoUpload(file){
-  if(!file)return;
-  const reader=new FileReader();
-  reader.onload=e=>{state.setupDraft.logo=e.target.result;render();};
-  reader.readAsDataURL(file);
-}
-
-function saveSetup(){
-  const d=state.setupDraft;
-  if(!d.name.trim()){showToast("Bitte Betriebsname eingeben","err");return;}
-  if(!d.pin||d.pin.length<4){showToast("PIN muss 4 Ziffern haben","err");return;}
-  const kats=d.kategorien.filter(k=>k.label.trim());
-  if(kats.length===0){showToast("Mindestens eine Kategorie","err");return;}
-  state.setup={name:d.name.trim(),logo:d.logo,emoji:d.emoji,pin:d.pin,kategorien:kats};
-  try{localStorage.setItem(SETUP_KEY,JSON.stringify(state.setup));sessionStorage.setItem(SESSION_KEY,"ok");}catch(e){}
-  state.screen="app";state.manuell.kategorie=kats[0].id;render();
-  showToast("Einrichtung gespeichert ✓");
-}
-
-async function analyzeWithClaude(text,filename){
-  if(!state.apiKey)throw new Error("kein_key");
-  const katNames=(state.setup?.kategorien||DEFAULT_KATEGORIEN).map(k=>k.id+"("+k.label+")").join(", ");
-  const prompt="Du bist Buchhaltungsassistent für einen Kleinbetrieb.\nAnalysiere diesen Beleg und gib NUR ein JSON-Objekt zurück (kein Markdown):\n{\"datum\":\"YYYY-MM-DD oder null\",\"betrag\":Zahl,\"art\":\"ausgabe oder einnahme\",\"lieferant\":\"Name oder null\",\"kategorie\":\"eine der IDs: "+(state.setup?.kategorien||DEFAULT_KATEGORIEN).map(k=>k.id).join(",")+"\",\"beschreibung\":\"max 60 Zeichen\"}\nKategorien: "+katNames+"\nDateiname: "+filename+"\nInhalt: "+text.substring(0,1500);
-  const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":state.apiKey,"anthropic-version":"2023-06-01"},body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:500,messages:[{role:"user",content:prompt}]})});
-  const d=await r.json();
-  const raw=d.content?.map(i=>i.text||"").join("").trim();
-  return JSON.parse(raw.replace(/```json|```/g,"").trim());
-}
-
+// ── Toast ─────────────────────────────────────────────────────────────────────
 let toastTimer;
-function showToast(msg,type="ok"){
+function showToast(msg,type='ok'){
   clearTimeout(toastTimer);
-  let t=document.querySelector(".toast");if(t)t.remove();
-  t=document.createElement("div");t.className="toast"+(type==="err"?" err":"");t.textContent=msg;
+  let t=document.querySelector('.toast');if(t)t.remove();
+  t=document.createElement('div');t.className='toast'+(type==='err'?' err':'');t.textContent=msg;
   document.body.appendChild(t);toastTimer=setTimeout(()=>t.remove(),3200);
 }
 
-function exportCSV(){
-  const liste=state.belege.filter(b=>b.monat===state.aktuellerMonat);
-  if(!liste.length){showToast("Keine Belege zum Exportieren","err");return;}
-  const kopf="Datum;Lieferant;Beschreibung;Kategorie;Art;Betrag (EUR)\n";
-  const zeilen=liste.map(b=>b.datum+";"+(b.lieferant||"").replace(/;/g,"")+";"+(b.beschreibung||"").replace(/;/g,"")+";"+( kat(b.kategorie)?.label||b.kategorie)+";"+(b.art==="ausgabe"?"Ausgabe":"Einnahme")+";"+(b.betrag||0).toFixed(2)).join("\n");
-  const blob=new Blob(["\uFEFF"+kopf+zeilen],{type:"text/csv;charset=utf-8;"});
-  const a=document.createElement("a");a.href=URL.createObjectURL(blob);
-  a.download="Belege_"+monatLabel(state.aktuellerMonat).replace(" ","_")+".csv";a.click();
-  showToast("CSV exportiert ✓");
+// ── Auth ──────────────────────────────────────────────────────────────────────
+async function doLogin(){
+  state.authError='';render();
+  const {error}=await sb.auth.signInWithPassword({email:state.authEmail,password:state.authPassword});
+  if(error){state.authError=error.message;render();}
+}
+async function doRegister(){
+  state.authError='';render();
+  if(!state.authName.trim()){state.authError='Bitte Name eingeben';render();return;}
+  const {error}=await sb.auth.signUp({email:state.authEmail,password:state.authPassword});
+  if(error){state.authError=error.message;render();}
+  else showToast('Registrierung erfolgreich — bitte E-Mail bestätigen');
+}
+async function doLogout(){
+  await sb.auth.signOut();
+  state.user=null;state.profile=null;state.belege=[];
+  state.screen='auth';render();
+}
+
+// ── Profile ───────────────────────────────────────────────────────────────────
+async function loadProfile(){
+  const {data}=await sb.from('profiles').select('*').eq('id',state.user.id).single();
+  if(data){
+    state.profile=data;
+    if(data.kategorien) state.profile.kategorien=data.kategorien;
+    return true;
+  }
+  return false;
+}
+
+async function saveProfile(profileData){
+  const {error}=await sb.from('profiles').upsert({id:state.user.id,...profileData});
+  if(!error){state.profile={...state.profile,...profileData};showToast('Gespeichert ✓');}
+  else showToast('Fehler beim Speichern','err');
+}
+
+// ── Belege ────────────────────────────────────────────────────────────────────
+async function loadBelege(){
+  state.syncing=true;render();
+  const {data}=await sb.from('belege').select('*').eq('user_id',state.user.id).order('erfasst',{ascending:false});
+  if(data) state.belege=data;
+  state.syncing=false;render();
+}
+
+async function saveBeleg(beleg){
+  const {data,error}=await sb.from('belege').insert({...beleg,user_id:state.user.id}).select().single();
+  if(data){state.belege.unshift(data);showToast('Beleg gespeichert ✓');}
+  else showToast('Fehler','err');
+  return data;
+}
+
+async function updateBeleg(id,data){
+  const {error}=await sb.from('belege').update(data).eq('id',id).eq('user_id',state.user.id);
+  if(!error){state.belege=state.belege.map(b=>b.id===id?{...b,...data}:b);showToast('Gespeichert ✓');}
+  else showToast('Fehler','err');
+}
+
+async function deleteBeleg(id){
+  const {error}=await sb.from('belege').delete().eq('id',id).eq('user_id',state.user.id);
+  if(!error){state.belege=state.belege.filter(b=>b.id!==id);showToast('Beleg gelöscht');}
+}
+
+// ── Claude API ────────────────────────────────────────────────────────────────
+async function analyzeWithClaude(text,filename){
+  if(!state.apiKey)throw new Error('kein_key');
+  const kats=(state.profile?.kategorien||DEFAULT_KATS);
+  const prompt='Du bist Buchhaltungsassistent. Analysiere diesen Beleg und gib NUR JSON zurück:\n{"datum":"YYYY-MM-DD","betrag":Zahl,"art":"ausgabe","lieferant":"Name","kategorie":"'+kats.map(k=>k.id).join('/')+'","beschreibung":"max 60 Zeichen"}\nKategorien: '+kats.map(k=>k.id+'='+k.label).join(', ')+'\nDatei: '+filename+'\n'+text.substring(0,1500);
+  const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':state.apiKey,'anthropic-version':'2023-06-01'},body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:500,messages:[{role:'user',content:prompt}]})});
+  const d=await r.json();
+  return JSON.parse(d.content?.map(i=>i.text||'').join('').trim().replace(/```json|```/g,'').trim());
 }
 
 async function verarbeiteFile(file){
   state.loading=true;render();
   try{
     let text=file.name;
-    if(file.type==="text/plain")text=await file.text();
-    else if(file.type==="application/pdf")text="PDF: "+file.name+" ("+Math.round(file.size/1024)+"KB)";
-    else if(file.type.startsWith("image/"))text="Bild: "+file.name;
+    if(file.type==='text/plain')text=await file.text();
+    else if(file.type==='application/pdf')text='PDF: '+file.name;
+    else if(file.type.startsWith('image/'))text='Bild: '+file.name;
     let result;
     try{result=await analyzeWithClaude(text,file.name);}
     catch(e){
-      if(e.message==="kein_key"){state.showKeyInput=true;state.loading=false;state.ansicht="neu";render();showToast("Bitte zuerst API-Key eingeben","err");return;}
-      const kats=state.setup?.kategorien||DEFAULT_KATEGORIEN;
-      result={datum:new Date().toISOString().split("T")[0],betrag:0,art:"ausgabe",lieferant:file.name.replace(/\.[^.]+$/,""),kategorie:kats[kats.length-1].id,beschreibung:file.name};
+      if(e.message==='kein_key'){state.showKeyInput=true;state.loading=false;state.ansicht='neu';render();showToast('Bitte API-Key eingeben','err');return;}
+      const kats=state.profile?.kategorien||DEFAULT_KATS;
+      result={datum:new Date().toISOString().split('T')[0],betrag:0,art:'ausgabe',lieferant:file.name.replace(/\.[^.]+$/,''),kategorie:kats[kats.length-1].id,beschreibung:file.name};
     }
-    const kats=state.setup?.kategorien||DEFAULT_KATEGORIEN;
     const monat=result.datum?result.datum.substring(0,7):state.aktuellerMonat;
-    state.belege.unshift({id:Date.now()+Math.random(),datum:result.datum||new Date().toISOString().split("T")[0],betrag:result.betrag||0,art:result.art||"ausgabe",lieferant:result.lieferant||file.name,kategorie:result.kategorie||kats[kats.length-1].id,beschreibung:result.beschreibung||file.name,monat,dateiname:file.name,erfasst:new Date().toISOString()});
-    speichern();showToast("Beleg erfasst ✓");
-  }catch(e){showToast("Fehler beim Verarbeiten","err");}
+    await saveBeleg({datum:result.datum||new Date().toISOString().split('T')[0],betrag:result.betrag||0,art:result.art||'ausgabe',lieferant:result.lieferant||file.name,kategorie:result.kategorie||(state.profile?.kategorien||DEFAULT_KATS)[0].id,beschreibung:result.beschreibung||file.name,monat,dateiname:file.name});
+  }catch(e){showToast('Fehler beim Verarbeiten','err');}
   state.loading=false;render();
 }
 
+function exportCSV(){
+  const liste=state.belege.filter(b=>b.monat===state.aktuellerMonat);
+  if(!liste.length){showToast('Keine Belege','err');return;}
+  const kopf='Datum;Lieferant;Beschreibung;Kategorie;Art;Betrag\n';
+  const zeilen=liste.map(b=>b.datum+';'+(b.lieferant||'')+';'+(b.beschreibung||'')+';'+(kat(b.kategorie)?.label||'')+';'+(b.art==='ausgabe'?'Ausgabe':'Einnahme')+';'+(b.betrag||0).toFixed(2)).join('\n');
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['\uFEFF'+kopf+zeilen],{type:'text/csv;charset=utf-8;'}));
+  a.download='Belege_'+monatLabel(state.aktuellerMonat).replace(' ','_')+'.csv';a.click();
+  showToast('CSV exportiert ✓');
+}
+
+// ── PIN ───────────────────────────────────────────────────────────────────────
+function pinPress(digit){
+  if(state.pinInput.length>=4)return;
+  state.pinInput+=digit;
+  if(state.pinInput.length===4){
+    if(state.pinInput===state.profile?.pin){
+      state.screen='app';state.pinError='';
+      try{sessionStorage.setItem('aicircle-pin-ok',state.user.id);}catch(e){}
+    }else{
+      state.pinError='Falscher PIN — nochmal versuchen.';
+      setTimeout(()=>{state.pinInput='';state.pinError='';render();},900);
+      state.pinInput='';
+    }
+  }
+  render();
+}
+function pinDel(){if(state.pinInput.length>0){state.pinInput=state.pinInput.slice(0,-1);render();}}
+
+// ── Setup ─────────────────────────────────────────────────────────────────────
+function handleLogoUpload(file){
+  if(!file)return;
+  const r=new FileReader();
+  r.onload=e=>{state.setupDraft.logo=e.target.result;render();};
+  r.readAsDataURL(file);
+}
+
+async function saveSetup(){
+  const d=state.setupDraft;
+  if(!d.name.trim()){showToast('Bitte Name eingeben','err');return;}
+  if(!d.pin||d.pin.length<4){showToast('PIN muss 4 Ziffern haben','err');return;}
+  const kats=d.kategorien.filter(k=>k.label.trim());
+  await saveProfile({name:d.name.trim(),logo_url:d.logo||'',emoji:d.emoji||'💼',pin:d.pin,kategorien:kats});
+  state.profile={...state.profile,name:d.name.trim(),logo_url:d.logo||'',emoji:d.emoji||'💼',pin:d.pin,kategorien:kats};
+  state.screen='app';
+  try{sessionStorage.setItem('aicircle-pin-ok',state.user.id);}catch(e){}
+  render();
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+async function boot(){
+  try{const k=localStorage.getItem(API_KEY_STORE);if(k)state.apiKey=k;}catch(e){}
+  const {data:{session}}=await sb.auth.getSession();
+  if(session){
+    state.user=session.user;
+    const hasProfile=await loadProfile();
+    if(!hasProfile){
+      state.screen='setup';
+      state.setupDraft={name:'',logo:'',emoji:'💼',pin:'',kategorien:DEFAULT_KATS.map(k=>({...k}))};
+    } else {
+      const pinOk=sessionStorage.getItem('aicircle-pin-ok');
+      state.screen=pinOk===state.user.id?'app':'pin';
+      if(state.screen==='app') await loadBelege();
+    }
+  } else {
+    state.screen='auth';
+  }
+  render();
+
+  sb.auth.onAuthStateChange(async(event,session)=>{
+    if(event==='SIGNED_IN'&&session){
+      state.user=session.user;
+      const hasProfile=await loadProfile();
+      if(!hasProfile){
+        state.screen='setup';
+        state.setupDraft={name:'',logo:'',emoji:'💼',pin:'',kategorien:DEFAULT_KATS.map(k=>({...k}))};
+      } else {
+        state.screen='pin';
+      }
+      render();
+    }
+  });
+}
+
+// ── Render ────────────────────────────────────────────────────────────────────
 function render(){
-  const app=document.getElementById("app");
+  const app=document.getElementById('app');
 
-  if(state.screen==="loading"){app.innerHTML='<div class="spinner"></div>';return;}
+  if(state.screen==='loading'){
+    app.innerHTML='<div class="spinner"></div><div style="color:var(--ink3);font-size:13px;margin-top:12px">Wird geladen…</div>';
+    return;
+  }
 
-  if(state.screen==="setup"){
+  if(state.screen==='auth'){
+    const isLogin=state.authMode==='login';
+    app.innerHTML='<div class="fullscreen dark-screen">'
+      +'<div class="auth-logo">💼</div>'
+      +'<div class="auth-title">Meine Belege</div>'
+      +'<div class="auth-sub">'+(isLogin?'Willkommen zurück':'Neues Konto erstellen')+'</div>'
+      +'<div class="auth-form">'
+      +(!isLogin?'<input class="auth-inp" placeholder="Name deines Betriebs" value="'+state.authName+'" oninput="state.authName=this.value"/>':'')
+      +'<input class="auth-inp" type="email" placeholder="E-Mail" value="'+state.authEmail+'" oninput="state.authEmail=this.value"/>'
+      +'<input class="auth-inp" type="password" placeholder="Passwort" value="'+state.authPassword+'" oninput="state.authPassword=this.value" onkeydown="if(event.key===\'Enter\')'+(isLogin?'doLogin()':'doRegister()')+'"/>'
+      +'<div class="auth-error">'+state.authError+'</div>'
+      +'<button class="auth-btn" onclick="'+(isLogin?'doLogin()':'doRegister()')+'">'+( isLogin?'Einloggen':'Registrieren')+'</button>'
+      +'</div>'
+      +'<div class="auth-switch">'+(isLogin?'Noch kein Konto? <span onclick="state.authMode=\'register\';state.authError=\'\';render()">Registrieren</span>':'Schon registriert? <span onclick="state.authMode=\'login\';state.authError=\'\';render()">Einloggen</span>')+'</div>'
+      +'<div class="ai-badge" style="margin-top:24px">✦ AI Circle Community Tool ✦</div>'
+      +'</div>';
+    return;
+  }
+
+  if(state.screen==='setup'){
     const d=state.setupDraft;
     const logoSection=d.logo
-      ?'<img src="'+d.logo+'" class="logo-preview" style="margin-bottom:10px"/><br><button onclick="state.setupDraft.logo=\'\';render()" style="background:none;border:none;color:var(--red);font-size:12px;cursor:pointer">Logo entfernen</button>'
-      :'<div style="font-size:32px;margin-bottom:8px">🖼️</div><div style="font-size:13px;color:var(--ink3)">Logo hochladen (PNG, JPG)</div><div style="font-size:11px;color:var(--ink3);margin-top:4px">Optional — sonst wird ein Emoji verwendet</div>';
-    const katRows=d.kategorien.map((k,i)=>'<div class="kat-row"><input class="kat-emoji-inp" value="'+k.icon+'" oninput="updateKat('+i+',\'icon\',this.value)" maxlength="2"/><input class="kat-name-inp" value="'+k.label+'" oninput="updateKat('+i+',\'label\',this.value)" placeholder="Kategoriename"/><button class="kat-del" onclick="delKat('+i+')">✕</button></div>').join("");
-    app.innerHTML='<div class="fullscreen setup-screen"><div class="setup-header"><div style="font-size:48px;margin-bottom:8px">💼</div><h1>Einrichtung</h1><p>Richte deine persönliche Beleg-App ein.<br>Das dauert nur 2 Minuten.</p></div><div class="setup-section"><div class="setup-label">Name deines Betriebs</div><input class="setup-inp" placeholder="z.B. Salon Walenta" value="'+d.name+'" oninput="state.setupDraft.name=this.value"/></div><div class="setup-section"><div class="setup-label">Logo (optional)</div><div class="logo-upload-zone" onclick="document.getElementById(\'logoInput\').click()">'+logoSection+'</div><input type="file" id="logoInput" accept="image/*" style="display:none" onchange="handleLogoUpload(this.files[0])"/></div><div class="setup-section"><div class="setup-label">Fallback-Emoji (falls kein Logo)</div><input class="setup-inp" placeholder="z.B. ✂️" value="'+d.emoji+'" oninput="state.setupDraft.emoji=this.value" style="font-size:24px;text-align:center"/></div><div class="setup-section"><div class="setup-label">PIN (4 Ziffern)</div><input class="setup-inp" type="password" inputmode="numeric" maxlength="4" placeholder="z.B. 1234" value="'+d.pin+'" oninput="state.setupDraft.pin=this.value"/></div><div class="setup-section"><div class="setup-label">Kategorien</div><div class="kat-list">'+katRows+'</div><button class="add-kat-btn" onclick="addKat()">+ Kategorie hinzufügen</button></div><button class="setup-save" onclick="saveSetup()">App starten →</button><div class="ai-circle-badge"><span>✦ AI Circle Community Tool ✦</span></div></div>';
+      ?'<img src="'+d.logo+'" class="logo-preview" style="margin-bottom:8px"/><br><button onclick="state.setupDraft.logo=\'\';render()" style="background:none;border:none;color:var(--red);font-size:12px;cursor:pointer">Entfernen</button>'
+      :'<div style="font-size:28px;margin-bottom:6px">🖼️</div><div style="font-size:13px;color:var(--ink3)">Logo hochladen (optional)</div>';
+    const katRows=d.kategorien.map((k,i)=>'<div class="kat-row"><input class="kat-emoji-inp" value="'+k.icon+'" oninput="state.setupDraft.kategorien['+i+'].icon=this.value" maxlength="2"/><input class="kat-name-inp" value="'+k.label+'" oninput="state.setupDraft.kategorien['+i+'].label=this.value" placeholder="Kategorie"/><button class="kat-del" onclick="state.setupDraft.kategorien.splice('+i+',1);render()">✕</button></div>').join('');
+    app.innerHTML='<div class="fullscreen light-screen">'
+      +'<div class="setup-header"><div style="font-size:44px;margin-bottom:8px">💼</div><h1>Einrichtung</h1><p>Richte deine App ein — dauert 2 Minuten.</p></div>'
+      +'<div class="setup-section"><div class="setup-label">Betriebsname *</div><input class="setup-inp" placeholder="z.B. Salon Walenta" value="'+d.name+'" oninput="state.setupDraft.name=this.value"/></div>'
+      +'<div class="setup-section"><div class="setup-label">Logo</div><div class="logo-upload-zone" onclick="document.getElementById(\'logoInput\').click()">'+logoSection+'</div><input type="file" id="logoInput" accept="image/*" style="display:none" onchange="handleLogoUpload(this.files[0])"/></div>'
+      +'<div class="setup-section"><div class="setup-label">Emoji (falls kein Logo)</div><input class="setup-inp" placeholder="💼" value="'+d.emoji+'" oninput="state.setupDraft.emoji=this.value" style="font-size:24px;text-align:center"/></div>'
+      +'<div class="setup-section"><div class="setup-label">PIN (4 Ziffern) *</div><input class="setup-inp" type="password" inputmode="numeric" maxlength="4" placeholder="z.B. 1234" value="'+d.pin+'" oninput="state.setupDraft.pin=this.value"/></div>'
+      +'<div class="setup-section"><div class="setup-label">Kategorien</div><div class="kat-list">'+katRows+'</div><button class="add-kat-btn" onclick="state.setupDraft.kategorien.push({id:\'k\'+Date.now(),icon:\'📦\',label:\'\'});render()">+ Hinzufügen</button></div>'
+      +'<button class="setup-save" onclick="saveSetup()">App starten →</button>'
+      +'<div class="ai-badge">✦ AI Circle Community Tool ✦</div>'
+      +'</div>';
     return;
   }
 
-  if(state.screen==="pin"){
-    const s=state.setup;
-    const dots=[0,1,2,3].map(i=>'<div class="pin-dot'+(i<state.pinInput.length?" filled":"")+'"></div>').join("");
-    const nums=[[1,2,3],[4,5,6],[7,8,9]].map(row=>row.map(n=>'<button class="pin-btn" onclick="pinPress(\''+n+'\')">'+n+"</button>").join("")).join("");
-    const logoHtml=s.logo
-      ?'<img src="'+s.logo+'" class="pin-logo"/>'
-      :'<div class="pin-logo-emoji">'+s.emoji+'</div>';
-    app.innerHTML='<div class="fullscreen pin-screen">'+logoHtml+'<div class="pin-brand">'+s.name+'</div><div class="pin-title">Meine Belege</div><div class="pin-dots">'+dots+'</div><div class="pin-error">'+state.pinError+'</div><div class="pin-grid">'+nums+'<div class="pin-btn empty"></div><button class="pin-btn" onclick="pinPress(\'0\')">0</button><button class="pin-btn" style="font-size:16px" onclick="pinDel()">⌫</button></div></div>';
+  if(state.screen==='pin'){
+    const p=state.profile;
+    const logoHtml=p?.logo_url?'<img src="'+p.logo_url+'" class="pin-logo-img"/>'  :'<div class="pin-logo-emoji">'+(p?.emoji||'💼')+'</div>';
+    const dots=[0,1,2,3].map(i=>'<div class="pin-dot'+(i<state.pinInput.length?' filled':'')+'"></div>').join('');
+    const nums=[[1,2,3],[4,5,6],[7,8,9]].map(row=>row.map(n=>'<button class="pin-btn" onclick="pinPress(\''+n+'\')">'+n+'</button>').join('')).join('');
+    app.innerHTML='<div class="fullscreen dark-screen">'+logoHtml+'<div class="pin-brand">'+(p?.name||'')+'</div><div class="pin-title">Meine Belege</div><div class="pin-dots">'+dots+'</div><div class="pin-error">'+state.pinError+'</div><div class="pin-grid">'+nums+'<div class="pin-btn empty"></div><button class="pin-btn" onclick="pinPress(\'0\')">0</button><button class="pin-btn" style="font-size:16px" onclick="pinDel()">⌫</button></div><button class="pin-logout" onclick="doLogout()">Abmelden</button></div>';
     return;
   }
 
-  // APP
-  const {ansicht,aktuellerMonat,belege,loading,editId}=state;
-  const s=state.setup;
-  const kats=s.kategorien;
+  // ── APP ───────────────────────────────────────────────────────────────────
+  const {ansicht,aktuellerMonat,belege,loading,editId,syncing}=state;
+  const p=state.profile;
+  const kats=p?.kategorien||DEFAULT_KATS;
   const bfm=belege.filter(b=>b.monat===aktuellerMonat);
-  const ausgaben=bfm.filter(b=>b.art==="ausgabe").reduce((sum,b)=>sum+(b.betrag||0),0);
-  const einnahmen=bfm.filter(b=>b.art==="einnahme").reduce((sum,b)=>sum+(b.betrag||0),0);
-  const katSummen=kats.map(k=>({...k,summe:bfm.filter(b=>b.kategorie===k.id&&b.art==="ausgabe").reduce((sum,b)=>sum+(b.betrag||0),0)})).filter(k=>k.summe>0).sort((a,b)=>b.summe-a.summe);
-  const alleMonateSet=new Set(belege.map(b=>b.monat));alleMonateSet.add(getCurrentMonat());
-  const alleMonate=Array.from(alleMonateSet).sort().reverse();
-  const monatOptions=alleMonate.map(m=>'<option value="'+m+'"'+(m===aktuellerMonat?" selected":"")+">"+monatLabel(m)+"</option>").join("");
+  const ausgaben=bfm.filter(b=>b.art==='ausgabe').reduce((s,b)=>s+(b.betrag||0),0);
+  const einnahmen=bfm.filter(b=>b.art==='einnahme').reduce((s,b)=>s+(b.betrag||0),0);
+  const katSummen=kats.map(k=>({...k,summe:bfm.filter(b=>b.kategorie===k.id&&b.art==='ausgabe').reduce((s,b)=>s+(b.betrag||0),0)})).filter(k=>k.summe>0).sort((a,b)=>b.summe-a.summe);
+  const alleSet=new Set(belege.map(b=>b.monat));alleSet.add(getMonat());
+  const alleMonate=Array.from(alleSet).sort().reverse();
+  const monatOpts=alleMonate.map(m=>'<option value="'+m+'"'+(m===aktuellerMonat?' selected':'')+'>'+monatLabel(m)+'</option>').join('');
+  const logoHtml=p?.logo_url?'<img src="'+p.logo_url+'" class="header-logo-img"/>'  :'<div class="header-logo-emoji">'+(p?.emoji||'💼')+'</div>';
 
-  const headerLogoHtml=s.logo
-    ?'<img src="'+s.logo+'" class="header-logo-img"/>'
-    :'<div class="header-logo-emoji">'+s.emoji+'</div>';
+  let inhalt='';
 
-  let inhalt="";
-
-  if(ansicht==="dashboard"){
-    const katBars=katSummen.map(k=>'<div style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:3px"><span>'+k.icon+" "+k.label+'</span><span style="font-weight:600">'+euro(k.summe)+"</span></div>"+'<div class="bar-track"><div class="bar-fill" style="background:#7C6B8A;width:'+Math.min(100,(k.summe/ausgaben)*100)+'%"></div></div></div>').join("");
-    inhalt='<div style="font-size:12px;color:var(--ink3);margin-bottom:12px">'+monatLabel(aktuellerMonat)+" · "+bfm.length+' Belege</div><div class="grid2"><div class="card" style="margin-bottom:0"><div class="stat-label">Ausgaben</div><div class="stat-value" style="color:var(--red)">'+euro(ausgaben)+'</div><div class="stat-sub">'+bfm.filter(b=>b.art==="ausgabe").length+' Belege</div></div><div class="card" style="margin-bottom:0"><div class="stat-label">Einnahmen</div><div class="stat-value" style="color:var(--green)">'+euro(einnahmen)+'</div><div class="stat-sub">'+bfm.filter(b=>b.art==="einnahme").length+' Belege</div></div></div>'+(katSummen.length>0?'<div class="card"><div class="section-title">Ausgaben nach Kategorie</div>'+katBars+"</div>":"")+(bfm.length===0?'<div class="empty"><div class="empty-icon">📂</div><div style="font-size:14px">Noch keine Belege für<br><strong>'+monatLabel(aktuellerMonat)+'</strong>.</div><button class="btn-primary" style="margin-top:16px;width:auto;padding:10px 24px" onclick="setAnsicht(\'neu\')">Ersten Beleg erfassen</button></div>':"")+(bfm.length>0?'<button class="btn-primary" onclick="exportCSV()">📤 Exportieren für Steuerberater</button>':"");
+  if(ansicht==='dashboard'){
+    const bars=katSummen.map(k=>'<div style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:3px"><span>'+k.icon+' '+k.label+'</span><span style="font-weight:600">'+euro(k.summe)+'</span></div><div class="bar-track"><div class="bar-fill" style="background:#7C6B8A;width:'+Math.min(100,(k.summe/ausgaben)*100)+'%"></div></div></div>').join('');
+    inhalt='<div style="font-size:12px;color:var(--ink3);margin-bottom:12px">'+monatLabel(aktuellerMonat)+' · '+bfm.length+' Belege'+(syncing?' · <span class="spinner-sm"></span>':'')+'</div>'
+      +'<div class="grid2"><div class="card" style="margin-bottom:0"><div class="stat-label">Ausgaben</div><div class="stat-value" style="color:var(--red)">'+euro(ausgaben)+'</div><div class="stat-sub">'+bfm.filter(b=>b.art==='ausgabe').length+' Belege</div></div><div class="card" style="margin-bottom:0"><div class="stat-label">Einnahmen</div><div class="stat-value" style="color:var(--green)">'+euro(einnahmen)+'</div><div class="stat-sub">'+bfm.filter(b=>b.art==='einnahme').length+' Belege</div></div></div>'
+      +(katSummen.length>0?'<div class="card"><div class="section-title">Ausgaben nach Kategorie</div>'+bars+'</div>':'')
+      +(bfm.length===0?'<div class="empty"><div class="empty-icon">📂</div><div style="font-size:14px">Noch keine Belege für<br><strong>'+monatLabel(aktuellerMonat)+'</strong>.</div><button class="btn-primary" style="margin-top:16px;width:auto;padding:10px 24px" onclick="setAnsicht(\'neu\')">Ersten Beleg erfassen</button></div>':'')
+      +(bfm.length>0?'<button class="btn-primary" onclick="exportCSV()">📤 Exportieren für Steuerberater</button>':'');
   }
 
-  else if(ansicht==="belege"){
+  else if(ansicht==='belege'){
     const items=bfm.map(b=>{
       const k=kat(b.kategorie);
       if(editId===b.id){
-        const editKatOpts=kats.map(k=>'<option value="'+k.id+'"'+(k.id===state.editData.kategorie?" selected":"")+">"+k.icon+" "+k.label+"</option>").join("");
-        return'<div class="beleg-item"><div class="edit-form"><input class="inp" type="date" value="'+(state.editData.datum||"")+'" onchange="updateEdit(\'datum\',this.value)"/><input class="inp" placeholder="Lieferant" value="'+(state.editData.lieferant||"")+'" oninput="updateEdit(\'lieferant\',this.value)"/><input class="inp" placeholder="Beschreibung" value="'+(state.editData.beschreibung||"")+'" oninput="updateEdit(\'beschreibung\',this.value)"/><div class="form-row"><input class="inp" placeholder="Betrag" value="'+(state.editData.betrag||"")+'" oninput="updateEdit(\'betrag\',this.value)" style="flex:1"/><select class="inp" onchange="updateEdit(\'art\',this.value)" style="flex:1"><option value="ausgabe"'+(state.editData.art==="ausgabe"?" selected":"")+'>Ausgabe</option><option value="einnahme"'+(state.editData.art==="einnahme"?" selected":"")+'>Einnahme</option></select></div><select class="inp" onchange="updateEdit(\'kategorie\',this.value)">'+editKatOpts+'</select><div class="edit-actions"><button class="btn-save" onclick="speicherEdit()">Speichern</button><button class="btn-cancel" onclick="cancelEdit()">Abbrechen</button></div></div></div>';
+        const eOpts=kats.map(k=>'<option value="'+k.id+'"'+(k.id===state.editData.kategorie?' selected':'')+'>'+k.icon+' '+k.label+'</option>').join('');
+        return'<div class="beleg-item"><div class="edit-form"><input class="inp" type="date" value="'+(state.editData.datum||'')+'" onchange="state.editData.datum=this.value"/><input class="inp" placeholder="Lieferant" value="'+(state.editData.lieferant||'')+'" oninput="state.editData.lieferant=this.value"/><input class="inp" placeholder="Beschreibung" value="'+(state.editData.beschreibung||'')+'" oninput="state.editData.beschreibung=this.value"/><div class="form-row"><input class="inp" placeholder="Betrag" value="'+(state.editData.betrag||'')+'" oninput="state.editData.betrag=this.value" style="flex:1"/><select class="inp" onchange="state.editData.art=this.value" style="flex:1"><option value="ausgabe"'+(state.editData.art==='ausgabe'?' selected':'')+'>Ausgabe</option><option value="einnahme"'+(state.editData.art==='einnahme'?' selected':'')+'>Einnahme</option></select></div><select class="inp" onchange="state.editData.kategorie=this.value">'+eOpts+'</select><div class="edit-actions"><button class="btn-save" onclick="speicherEdit()">Speichern</button><button class="btn-cancel" onclick="state.editId=null;render()">Abbrechen</button></div></div></div>';
       }
-      return'<div class="beleg-item"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px"><div style="flex:1;min-width:0"><div><span class="beleg-tag" style="background:#7C6B8A1A;color:#7C6B8A">'+(k?.icon||"📦")+" "+(k?.label||"")+'</span><span style="font-size:10px;color:var(--ink3);margin-left:4px">'+b.datum+'</span></div><div class="beleg-name">'+(b.lieferant||"—")+'</div><div class="beleg-desc">'+(b.beschreibung||"")+'</div></div><div class="beleg-amount" style="color:'+(b.art==="ausgabe"?"var(--red)":"var(--green)")+'">'+(b.art==="ausgabe"?"−":"+")+(euro(b.betrag||0))+"</div></div>"+'<div class="beleg-actions"><button class="btn-sm btn-edit" onclick="startEdit(\''+b.id+'\')">✏️ Bearbeiten</button><button class="btn-sm btn-del" onclick="loescheBeleg(\''+b.id+'\')">🗑️ Löschen</button></div></div>';
-    }).join("");
-    inhalt='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-size:13px;color:var(--ink3)">'+bfm.length+" Belege · "+monatLabel(aktuellerMonat)+"</div>"+(bfm.length>0?'<button class="btn-outline" onclick="exportCSV()">Exportieren</button>':"")+"</div>"+(bfm.length===0?'<div class="empty"><div class="empty-icon">🗂️</div><div style="font-size:14px">Keine Belege in diesem Monat.</div></div>':items);
+      return'<div class="beleg-item"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px"><div style="flex:1;min-width:0"><div><span class="beleg-tag" style="background:#7C6B8A1A;color:#7C6B8A">'+(k?.icon||'📦')+' '+(k?.label||'')+'</span><span style="font-size:10px;color:var(--ink3);margin-left:4px">'+b.datum+'</span></div><div class="beleg-name">'+(b.lieferant||'—')+'</div><div class="beleg-desc">'+(b.beschreibung||'')+'</div></div><div class="beleg-amount" style="color:'+(b.art==='ausgabe'?'var(--red)':'var(--green)')+'">'+(b.art==='ausgabe'?'−':'+')+euro(b.betrag||0)+'</div></div><div class="beleg-actions"><button class="btn-sm btn-edit" onclick="state.editId=\''+b.id+'\';state.editData={...state.belege.find(x=>x.id===\''+b.id+'\')};render()">✏️ Bearbeiten</button><button class="btn-sm btn-del" onclick="if(confirm(\'Löschen?\'))deleteBeleg(\''+b.id+'\').then(()=>render())">🗑️ Löschen</button></div></div>';
+    }).join('');
+    inhalt='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-size:13px;color:var(--ink3)">'+bfm.length+' Belege · '+monatLabel(aktuellerMonat)+'</div>'+(bfm.length>0?'<button class="btn-outline" onclick="exportCSV()">Exportieren</button>':'')+'</div>'+(bfm.length===0?'<div class="empty"><div class="empty-icon">🗂️</div><div style="font-size:14px">Keine Belege in diesem Monat.</div></div>':items);
   }
 
-  else if(ansicht==="neu"){
-    const keySection=state.showKeyInput||!state.apiKey?'<div class="card" style="margin-bottom:14px"><div class="section-title">🔑 Anthropic API-Key</div><p style="font-size:12px;color:var(--ink3);margin-bottom:10px;line-height:1.5">Für automatische Erkennung brauchst du einen Key von <strong>console.anthropic.com</strong>.</p><input class="inp" type="password" placeholder="sk-ant-…" id="apiKeyInput" value="'+state.apiKey+'" style="margin-bottom:8px"/><button class="btn-primary" style="padding:10px" onclick="saveApiKey()">Key speichern</button></div>':'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;background:#F0EAF4;border-radius:9px;padding:9px 12px"><span style="font-size:12px;color:var(--accent);font-weight:500">🔑 API-Key hinterlegt</span><button onclick="state.showKeyInput=true;render()" style="background:none;border:none;font-size:11px;color:var(--ink3);cursor:pointer">ändern</button></div>';
-    const manuellKatOpts=kats.map(k=>'<option value="'+k.id+'"'+(state.manuell.kategorie===k.id?" selected":"")+">"+k.icon+" "+k.label+"</option>").join("");
-    inhalt=keySection+(loading?'<div class="analyzing"><div class="analyzing-dot"></div><span style="font-size:13px;color:var(--accent);font-weight:500">Beleg wird analysiert…</span></div>':"")+'<div class="upload-zone" id="dropzone" onclick="document.getElementById(\'fileInput\').click()"><div class="upload-icon">'+(loading?"⏳":"📎")+'</div><div class="upload-title">'+(loading?"Wird analysiert…":"PDF oder Foto hochladen")+'</div><div class="upload-hint">Tippe hier oder ziehe eine Datei rein</div></div><input type="file" id="fileInput" accept=".pdf,image/*,.txt" multiple style="display:none" onchange="handleFiles(this.files)"/><div class="card"><div class="section-title">Oder manuell eingeben</div><div class="form-group"><input class="inp" type="date" value="'+state.manuell.datum+'" onchange="updateManuell(\'datum\',this.value)"/><input class="inp" placeholder="Lieferant" value="'+state.manuell.lieferant+'" oninput="updateManuell(\'lieferant\',this.value)"/><input class="inp" placeholder="Beschreibung *" value="'+state.manuell.beschreibung+'" oninput="updateManuell(\'beschreibung\',this.value)"/><div class="form-row"><input class="inp" placeholder="Betrag *" value="'+state.manuell.betrag+'" oninput="updateManuell(\'betrag\',this.value)" style="flex:1"/><select class="inp" onchange="updateManuell(\'art\',this.value)" style="flex:1"><option value="ausgabe">Ausgabe</option><option value="einnahme">Einnahme</option></select></div><select class="inp" onchange="updateManuell(\'kategorie\',this.value)">'+manuellKatOpts+'</select><button class="btn-primary" onclick="speicherManuell()">Beleg speichern</button></div></div>';
+  else if(ansicht==='neu'){
+    const keySection=state.showKeyInput||!state.apiKey
+      ?'<div class="card" style="margin-bottom:14px"><div class="section-title">🔑 Anthropic API-Key</div><p style="font-size:12px;color:var(--ink3);margin-bottom:10px;line-height:1.5">Für automatische Erkennung brauchst du einen Key von <strong>console.anthropic.com</strong>.</p><input class="inp" type="password" placeholder="sk-ant-…" id="apiKeyInput" value="'+state.apiKey+'" style="margin-bottom:8px"/><button class="btn-primary" style="padding:10px" onclick="saveApiKey()">Key speichern</button></div>'
+      :'<div class="key-section"><span style="font-size:12px;color:var(--accent);font-weight:500">🔑 API-Key hinterlegt</span><button onclick="state.showKeyInput=true;render()" style="background:none;border:none;font-size:11px;color:var(--ink3);cursor:pointer">ändern</button></div>';
+    const mOpts=kats.map(k=>'<option value="'+k.id+'"'+(state.manuell.kategorie===k.id?' selected':'')+'>'+k.icon+' '+k.label+'</option>').join('');
+    inhalt=keySection
+      +(loading?'<div class="analyzing"><div class="analyzing-dot"></div><span style="font-size:13px;color:var(--accent);font-weight:500">Beleg wird analysiert…</span></div>':'')
+      +'<div class="upload-zone" id="dropzone" onclick="document.getElementById(\'fileInput\').click()"><div style="font-size:32px;margin-bottom:8px">'+(loading?'⏳':'📎')+'</div><div style="font-size:14px;font-weight:600;color:var(--accent)">'+(loading?'Wird analysiert…':'PDF oder Foto hochladen')+'</div><div style="font-size:12px;color:var(--ink3);margin-top:4px">Tippe hier oder ziehe eine Datei rein</div></div>'
+      +'<input type="file" id="fileInput" accept=".pdf,image/*,.txt" multiple style="display:none" onchange="Array.from(this.files).forEach(verarbeiteFile);this.value=\'\'"/>'
+      +'<div class="card"><div class="section-title">Oder manuell eingeben</div><div class="form-group"><input class="inp" type="date" value="'+state.manuell.datum+'" onchange="state.manuell.datum=this.value"/><input class="inp" placeholder="Lieferant" value="'+state.manuell.lieferant+'" oninput="state.manuell.lieferant=this.value"/><input class="inp" placeholder="Beschreibung *" value="'+state.manuell.beschreibung+'" oninput="state.manuell.beschreibung=this.value"/><div class="form-row"><input class="inp" placeholder="Betrag *" value="'+state.manuell.betrag+'" oninput="state.manuell.betrag=this.value" style="flex:1"/><select class="inp" onchange="state.manuell.art=this.value" style="flex:1"><option value="ausgabe">Ausgabe</option><option value="einnahme">Einnahme</option></select></div><select class="inp" onchange="state.manuell.kategorie=this.value">'+mOpts+'</select><button class="btn-primary" onclick="speicherManuell()">Beleg speichern</button></div></div>';
   }
 
-  else if(ansicht==="einstellungen"){
-    inhalt='<div class="card"><div class="section-title">⚙️ Einstellungen</div><div style="display:flex;flex-direction:column;gap:12px"><div><div style="font-size:12px;color:var(--ink3);margin-bottom:6px">Betriebsname</div><div style="font-size:15px;font-weight:600">'+s.name+'</div></div><div><div style="font-size:12px;color:var(--ink3);margin-bottom:6px">Kategorien</div>'+kats.map(k=>'<div style="font-size:13px;padding:4px 0">'+k.icon+" "+k.label+"</div>").join("")+'</div><button class="btn-primary" style="background:#FEF0EE;color:var(--red);margin-top:8px" onclick="resetSetup()">Einrichtung zurücksetzen</button></div></div><div style="text-align:center;margin-top:20px"><div style="font-size:11px;color:var(--ink3);letter-spacing:1px">✦ AI Circle Community Tool ✦</div></div>';
+  else if(ansicht==='einstellungen'){
+    inhalt='<div class="card"><div class="section-title">⚙️ Einstellungen</div><div style="display:flex;flex-direction:column;gap:14px">'
+      +'<div><div style="font-size:11px;color:var(--ink3);margin-bottom:4px">E-MAIL</div><div style="font-size:14px">'+( state.user?.email||'')+'</div></div>'
+      +'<div><div style="font-size:11px;color:var(--ink3);margin-bottom:4px">BETRIEB</div><div style="font-size:14px;font-weight:600">'+(p?.name||'')+'</div></div>'
+      +'<div><div style="font-size:11px;color:var(--ink3);margin-bottom:6px">KATEGORIEN</div>'+kats.map(k=>'<div style="font-size:13px;padding:3px 0">'+k.icon+' '+k.label+'</div>').join('')+'</div>'
+      +'<button class="btn-primary" onclick="loadBelege().then(()=>showToast(\'Synchronisiert ✓\'))" style="background:#F0EAF4;color:var(--accent)">🔄 Jetzt synchronisieren</button>'
+      +'<button class="btn-primary" onclick="doLogout()" style="background:#FEF0EE;color:var(--red)">Abmelden</button>'
+      +'</div></div>'
+      +'<div style="text-align:center;margin-top:16px;font-size:11px;color:var(--ink3);letter-spacing:1px">✦ AI Circle Community Tool ✦</div>';
   }
 
-  app.innerHTML='<div class="header"><div class="header-left">'+headerLogoHtml+'<div><div class="header-sub">'+s.name+'</div><div class="header-title">Meine Belege</div></div></div><select class="month-select" onchange="setMonat(this.value)">'+monatOptions+'</select></div><nav class="nav"><button class="nav-btn'+(ansicht==="dashboard"?" active":"")+'" onclick="setAnsicht(\'dashboard\')">Übersicht</button><button class="nav-btn'+(ansicht==="belege"?" active":"")+'" onclick="setAnsicht(\'belege\')">Belege</button><button class="nav-btn'+(ansicht==="neu"?" active":"")+'" onclick="setAnsicht(\'neu\')">+ Neu</button><button class="nav-btn'+(ansicht==="einstellungen"?" active":"")+'" onclick="setAnsicht(\'einstellungen\')">⚙️</button></nav><main class="main">'+inhalt+"</main>";
+  app.innerHTML='<div class="header"><div class="header-left">'+logoHtml+'<div><div class="header-sub">'+(p?.name||'')+'</div><div class="header-title">Meine Belege</div></div></div><select class="month-select" onchange="state.aktuellerMonat=this.value;render()">'+monatOpts+'</select></div>'
+    +'<nav class="nav"><button class="nav-btn'+(ansicht==='dashboard'?' active':'')+'" onclick="setAnsicht(\'dashboard\')">Übersicht</button><button class="nav-btn'+(ansicht==='belege'?' active':'')+'" onclick="setAnsicht(\'belege\')">Belege</button><button class="nav-btn'+(ansicht==='neu'?' active':'')+'" onclick="setAnsicht(\'neu\')">+ Neu</button><button class="nav-btn'+(ansicht==='einstellungen'?' active':'')+'" onclick="setAnsicht(\'einstellungen\')">⚙️</button></nav>'
+    +'<main class="main">'+inhalt+'</main>';
 
-  const dz=document.getElementById("dropzone");
+  const dz=document.getElementById('dropzone');
   if(dz){
-    dz.addEventListener("dragover",e=>{e.preventDefault();dz.classList.add("drag");});
-    dz.addEventListener("dragleave",()=>dz.classList.remove("drag"));
-    dz.addEventListener("drop",e=>{e.preventDefault();dz.classList.remove("drag");handleFiles(e.dataTransfer.files);});
+    dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('drag');});
+    dz.addEventListener('dragleave',()=>dz.classList.remove('drag'));
+    dz.addEventListener('drop',e=>{e.preventDefault();dz.classList.remove('drag');Array.from(e.dataTransfer.files).forEach(verarbeiteFile);});
   }
 }
 
 function setAnsicht(v){state.ansicht=v;render();}
-function setMonat(v){state.aktuellerMonat=v;render();}
-function addKat(){state.setupDraft.kategorien.push({id:"k"+Date.now(),icon:"📦",label:""});render();}
-function delKat(i){state.setupDraft.kategorien.splice(i,1);render();}
-function updateKat(i,field,val){state.setupDraft.kategorien[i][field]=val;}
-function handleFiles(files){Array.from(files).forEach(verarbeiteFile);}
-function updateManuell(k,v){state.manuell[k]=v;}
-function speicherManuell(){
-  if(!state.manuell.betrag||!state.manuell.beschreibung){showToast("Betrag und Beschreibung sind Pflichtfelder","err");return;}
-  const kats=state.setup?.kategorien||DEFAULT_KATEGORIEN;
+
+async function speicherManuell(){
+  if(!state.manuell.betrag||!state.manuell.beschreibung){showToast('Betrag und Beschreibung sind Pflichtfelder','err');return;}
+  const kats=state.profile?.kategorien||DEFAULT_KATS;
   const monat=state.manuell.datum?state.manuell.datum.substring(0,7):state.aktuellerMonat;
-  state.belege.unshift({id:Date.now()+Math.random(),...state.manuell,betrag:parseFloat(state.manuell.betrag.replace(",",".")),kategorie:state.manuell.kategorie||kats[0].id,monat,dateiname:null,erfasst:new Date().toISOString()});
-  state.manuell=emptyManuell();speichern();setAnsicht("belege");showToast("Beleg gespeichert ✓");
-}
-function loescheBeleg(id){
-  if(!confirm("Beleg wirklich löschen?"))return;
-  state.belege=state.belege.filter(b=>String(b.id)!==String(id));speichern();render();showToast("Beleg gelöscht");
-}
-function startEdit(id){const b=state.belege.find(b=>String(b.id)===String(id));if(!b)return;state.editId=b.id;state.editData={...b};render();}
-function updateEdit(k,v){state.editData[k]=v;}
-function cancelEdit(){state.editId=null;render();}
-function speicherEdit(){
-  state.belege=state.belege.map(b=>b.id===state.editId?{...b,...state.editData,betrag:parseFloat(String(state.editData.betrag).replace(",","."))}:b);
-  state.editId=null;speichern();render();showToast("Gespeichert ✓");
-}
-function saveApiKey(){
-  const v=document.getElementById("apiKeyInput")?.value?.trim();
-  if(!v){showToast("Bitte Key eingeben","err");return;}
-  state.apiKey=v;state.showKeyInput=false;
-  try{localStorage.setItem(API_KEY_KEY,v);}catch(e){}
-  showToast("API-Key gespeichert ✓");render();
-}
-function resetSetup(){
-  if(!confirm("Wirklich zurücksetzen? Alle Belege werden gelöscht."))return;
-  localStorage.removeItem(SETUP_KEY);localStorage.removeItem(STORAGE_KEY);sessionStorage.removeItem(SESSION_KEY);
-  location.reload();
+  await saveBeleg({datum:state.manuell.datum||new Date().toISOString().split('T')[0],betrag:parseFloat(state.manuell.betrag.replace(',','.')),art:state.manuell.art,lieferant:state.manuell.lieferant,kategorie:state.manuell.kategorie||kats[0].id,beschreibung:state.manuell.beschreibung,monat});
+  state.manuell=emptyManuell();setAnsicht('belege');
 }
 
-laden();render();
+async function speicherEdit(){
+  const d=state.editData;
+  await updateBeleg(state.editId,{datum:d.datum,betrag:parseFloat(String(d.betrag).replace(',','.')),art:d.art,lieferant:d.lieferant,kategorie:d.kategorie,beschreibung:d.beschreibung});
+  state.editId=null;render();
+}
+
+function saveApiKey(){
+  const v=document.getElementById('apiKeyInput')?.value?.trim();
+  if(!v){showToast('Bitte Key eingeben','err');return;}
+  state.apiKey=v;state.showKeyInput=false;
+  try{localStorage.setItem(API_KEY_STORE,v);}catch(e){}
+  showToast('API-Key gespeichert ✓');render();
+}
+
+boot();
 </script>
 </body>
 </html>
