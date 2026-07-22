@@ -8,7 +8,6 @@
   <meta name="apple-mobile-web-app-capable" content="yes"/>
   <title>Meine Belege</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
-  <script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <style>
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
     :root{
@@ -23,10 +22,7 @@
     .fullscreen{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:1000;padding:24px;max-width:480px;margin:0 auto}
     .dark-screen{background:var(--accent)}
     .light-screen{background:var(--canvas);justify-content:flex-start;padding-top:40px;overflow-y:auto}
-
-    /* AUTH */
     .auth-logo{font-size:48px;margin-bottom:8px}
-    .auth-logo-img{width:140px;height:60px;object-fit:contain;margin-bottom:12px;filter:brightness(0) invert(1)}
     .auth-title{color:#fff;font-size:22px;font-weight:700;margin-bottom:6px}
     .auth-sub{color:var(--accentlight);font-size:13px;margin-bottom:28px;text-align:center}
     .auth-form{width:100%;display:flex;flex-direction:column;gap:10px}
@@ -34,12 +30,10 @@
     .auth-inp::placeholder{color:rgba(255,255,255,0.5)}
     .auth-btn{width:100%;padding:14px;border:none;border-radius:10px;background:#fff;color:var(--accent);font-size:15px;font-weight:700;font-family:inherit;cursor:pointer;margin-top:4px}
     .auth-switch{color:var(--accentlight);font-size:13px;margin-top:14px;cursor:pointer;text-align:center}
-    .auth-switch span{color:#fff;font-weight:600;text-decoration:underline}
+    .auth-switch span{color:#fff;font-weight:600;text-decoration:underline;cursor:pointer}
     .auth-error{color:#F4A49A;font-size:12px;text-align:center;min-height:18px}
-
-    /* PIN */
-    .pin-logo-img{width:140px;height:60px;object-fit:contain;margin-bottom:12px;filter:brightness(0) invert(1)}
     .pin-logo-emoji{font-size:48px;margin-bottom:8px}
+    .pin-logo-img{width:140px;height:60px;object-fit:contain;margin-bottom:12px;filter:brightness(0) invert(1)}
     .pin-brand{color:var(--accentlight);font-size:11px;letter-spacing:2px;text-transform:uppercase;margin-bottom:4px}
     .pin-title{color:#fff;font-size:22px;font-weight:700;margin-bottom:28px}
     .pin-dots{display:flex;gap:14px;margin-bottom:28px}
@@ -51,8 +45,6 @@
     .pin-btn:active{background:rgba(255,255,255,0.25)}
     .pin-btn.empty{background:transparent;cursor:default}
     .pin-logout{color:var(--accentlight);font-size:12px;margin-top:20px;cursor:pointer;background:none;border:none}
-
-    /* SETUP */
     .setup-header{text-align:center;margin-bottom:28px;width:100%}
     .setup-header h1{font-size:22px;font-weight:700;color:var(--accent);margin-bottom:6px}
     .setup-header p{font-size:13px;color:var(--ink3);line-height:1.5}
@@ -69,8 +61,6 @@
     .add-kat-btn{width:100%;padding:10px;border:1.5px dashed var(--border);border-radius:8px;background:none;color:var(--ink3);font-size:13px;font-family:inherit;cursor:pointer;margin-top:4px}
     .setup-save{width:100%;background:var(--accent);color:#fff;border:none;border-radius:var(--radius);padding:15px;font-size:15px;font-weight:700;font-family:inherit;cursor:pointer;margin-top:8px}
     .ai-badge{text-align:center;margin-top:16px;font-size:11px;color:var(--ink3);letter-spacing:1px}
-
-    /* HEADER */
     .header{background:var(--accent);padding:12px 18px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;box-shadow:0 2px 12px rgba(44,36,56,0.25)}
     .header-left{display:flex;align-items:center;gap:10px}
     .header-logo-img{height:34px;width:auto;object-fit:contain;filter:brightness(0) invert(1);opacity:0.92}
@@ -78,12 +68,9 @@
     .header-title{color:#fff;font-size:16px;font-weight:700}
     .header-sub{color:var(--accentlight);font-size:10px;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:1px}
     .month-select{background:var(--accent2);color:#fff;border:none;border-radius:8px;padding:6px 8px;font-size:12px;font-family:inherit;cursor:pointer;outline:none}
-    .sync-indicator{font-size:10px;color:var(--accentlight);margin-top:2px}
-
     .nav{background:var(--surface);border-bottom:1px solid var(--border);display:flex;position:sticky;top:62px;z-index:99}
     .nav-btn{flex:1;padding:12px 4px;border:none;background:none;cursor:pointer;font-size:12px;font-weight:500;color:var(--ink3);font-family:inherit;border-bottom:2px solid transparent}
     .nav-btn.active{color:var(--accent);font-weight:700;border-bottom-color:var(--accent)}
-
     .main{flex:1;padding:18px 16px 100px;overflow-y:auto}
     .card{background:var(--surface);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow);margin-bottom:12px}
     .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
@@ -121,7 +108,6 @@
     .toast.err{background:var(--red)}
     @keyframes toastIn{from{opacity:0;transform:translateX(-50%) translateY(8px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
     .spinner{width:36px;height:36px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.7s linear infinite}
-    .spinner-sm{width:16px;height:16px;border:2px solid rgba(255,255,255,0.3);border-top-color:#fff;border-radius:50%;animation:spin 0.7s linear infinite;display:inline-block}
     @keyframes spin{to{transform:rotate(360deg)}}
     .analyzing{display:flex;align-items:center;gap:8px;background:#F0EAF4;border-radius:9px;padding:12px 14px;margin-bottom:14px}
     .analyzing-dot{width:8px;height:8px;background:var(--accent);border-radius:50%;animation:pulse 0.8s ease-in-out infinite alternate}
@@ -134,16 +120,12 @@
   <div class="spinner"></div>
   <div style="color:var(--ink3);font-size:13px">Wird geladen…</div>
 </div>
-
 <script>
-// ── Supabase Config ───────────────────────────────────────────────────────────
-const SUPABASE_URL = 'https://lpuxxvfrrcnbuzafscyk.supabase.co';
-const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxwdXh2dmZycmNuYnV6YWZzY3lrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ2ODIxNDcsImV4cCI6MjEwMDI1ODE0N30.6VZUmmXj_x3Q8J55s_tbOHcW5-U5OXllGoEBhypaVfI';
-const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
-
-const MONATE = ['Jänner','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
-const API_KEY_STORE = 'aicircle-apikey';
-const DEFAULT_KATS = [
+// ── Config ────────────────────────────────────────────────────────────────────
+const SB_URL = 'https://lpuxxvfrrcnbuzafscyk.supabase.co';
+const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxwdXh2dmZycmNuYnV6YWZzY3lrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ2ODIxNDcsImV4cCI6MjEwMDI1ODE0N30.6VZUmmXj_x3Q8J55s_tbOHcW5-U5OXllGoEBhypaVfI';
+const MONATE=['Jänner','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
+const DEFAULT_KATS=[
   {id:'k1',icon:'🛒',label:'Einkauf & Material'},
   {id:'k2',icon:'🏠',label:'Miete & Betriebskosten'},
   {id:'k3',icon:'👥',label:'Personal & Lohn'},
@@ -153,333 +135,350 @@ const DEFAULT_KATS = [
   {id:'k7',icon:'📦',label:'Sonstiges'},
 ];
 
-let state = {
-  screen: 'loading',
-  user: null,
-  profile: null,
-  pinInput: '', pinError: '',
-  belege: [],
-  ansicht: 'dashboard',
-  aktuellerMonat: getMonat(),
-  editId: null, editData: {},
-  manuell: emptyManuell(),
-  loading: false, syncing: false,
-  apiKey: '', showKeyInput: false,
-  authMode: 'login',
-  authEmail: '', authPassword: '', authName: '', authError: '',
-  setupDraft: null,
+// ── Supabase REST helpers ────────────────────────────────────────────────────
+function sbHeaders(token){
+  const h={'Content-Type':'application/json','apikey':SB_KEY,'Authorization':'Bearer '+(token||SB_KEY)};
+  return h;
+}
+async function sbPost(path,body,token){
+  const r=await fetch(SB_URL+path,{method:'POST',headers:sbHeaders(token),body:JSON.stringify(body)});
+  return r.json();
+}
+async function sbGet(path,token){
+  const r=await fetch(SB_URL+path,{headers:{...sbHeaders(token),'Accept':'application/json'}});
+  return r.json();
+}
+async function sbPatch(path,body,token){
+  const r=await fetch(SB_URL+path,{method:'PATCH',headers:{...sbHeaders(token),'Prefer':'return=representation'},body:JSON.stringify(body)});
+  return r.json();
+}
+async function sbDelete(path,token){
+  await fetch(SB_URL+path,{method:'DELETE',headers:sbHeaders(token)});
+}
+
+// Auth
+async function signUp(email,password){
+  const d=await sbPost('/auth/v1/signup',{email,password});
+  if(d.error)throw new Error(d.error.message||d.msg||'Fehler');
+  return d;
+}
+async function signIn(email,password){
+  const d=await sbPost('/auth/v1/token?grant_type=password',{email,password});
+  if(d.error)throw new Error(d.error.message||d.msg||'Fehler');
+  return d;
+}
+async function signOut(token){
+  await sbPost('/auth/v1/logout',{},token);
+}
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let S={
+  screen:'loading',
+  token:null,userId:null,
+  profile:null,
+  pinInput:'',pinError:'',
+  belege:[],
+  ansicht:'dashboard',
+  monat:getMonat(),
+  editId:null,editData:{},
+  manuell:emptyM(),
+  loading:false,
+  apiKey:'',showKeyInput:false,
+  authMode:'login',
+  authEmail:'',authPass:'',authName:'',authErr:'',
+  draft:null,
 };
 
-function emptyManuell(){return{datum:'',betrag:'',art:'ausgabe',lieferant:'',kategorie:'',beschreibung:''};}
+function emptyM(){return{datum:'',betrag:'',art:'ausgabe',lieferant:'',kategorie:'',beschreibung:''};}
 function getMonat(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');}
-function monatLabel(k){if(!k)return'';const[y,m]=k.split('-');return MONATE[parseInt(m)-1]+' '+y;}
-function euro(n){return(n||0).toLocaleString('de-AT',{style:'currency',currency:'EUR'});}
-function kat(id){const kats=state.profile?.kategorien||DEFAULT_KATS;return kats.find(k=>k.id===id)||kats[kats.length-1];}
+function mL(k){if(!k)return'';const[y,m]=k.split('-');return MONATE[parseInt(m)-1]+' '+y;}
+function eur(n){return(n||0).toLocaleString('de-AT',{style:'currency',currency:'EUR'});}
+function kk(id){const kats=S.profile?.kategorien||DEFAULT_KATS;return kats.find(k=>k.id===id)||kats[kats.length-1];}
+
+// ── Storage ────────────────────────────────────────────────────────────────────
+function saveLocal(){try{if(S.token)localStorage.setItem('sb_token',S.token);if(S.userId)localStorage.setItem('sb_uid',S.userId);if(S.apiKey)localStorage.setItem('sb_apikey',S.apiKey);}catch(e){}}
+function loadLocal(){try{S.token=localStorage.getItem('sb_token');S.userId=localStorage.getItem('sb_uid');S.apiKey=localStorage.getItem('sb_apikey')||'';}catch(e){}}
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
-let toastTimer;
-function showToast(msg,type='ok'){
-  clearTimeout(toastTimer);
+let tTimer;
+function toast(msg,type='ok'){
+  clearTimeout(tTimer);
   let t=document.querySelector('.toast');if(t)t.remove();
   t=document.createElement('div');t.className='toast'+(type==='err'?' err':'');t.textContent=msg;
-  document.body.appendChild(t);toastTimer=setTimeout(()=>t.remove(),3200);
+  document.body.appendChild(t);tTimer=setTimeout(()=>t.remove(),3200);
 }
 
-// ── Auth ──────────────────────────────────────────────────────────────────────
-async function doLogin(){
-  state.authError='';render();
-  const {error}=await sb.auth.signInWithPassword({email:state.authEmail,password:state.authPassword});
-  if(error){state.authError=error.message;render();}
-}
-async function doRegister(){
-  state.authError='';render();
-  if(!state.authName.trim()){state.authError='Bitte Name eingeben';render();return;}
-  const {error}=await sb.auth.signUp({email:state.authEmail,password:state.authPassword});
-  if(error){state.authError=error.message;render();}
-  else showToast('Registrierung erfolgreich — bitte E-Mail bestätigen');
-}
-async function doLogout(){
-  await sb.auth.signOut();
-  state.user=null;state.profile=null;state.belege=[];
-  state.screen='auth';render();
-}
-
-// ── Profile ───────────────────────────────────────────────────────────────────
+// ── API calls ─────────────────────────────────────────────────────────────────
 async function loadProfile(){
-  const {data}=await sb.from('profiles').select('*').eq('id',state.user.id).single();
-  if(data){
-    state.profile=data;
-    if(data.kategorien) state.profile.kategorien=data.kategorien;
-    return true;
-  }
+  const d=await sbGet('/rest/v1/profiles?id=eq.'+S.userId+'&select=*',S.token);
+  if(Array.isArray(d)&&d.length>0){S.profile=d[0];return true;}
   return false;
 }
-
-async function saveProfile(profileData){
-  const {error}=await sb.from('profiles').upsert({id:state.user.id,...profileData});
-  if(!error){state.profile={...state.profile,...profileData};showToast('Gespeichert ✓');}
-  else showToast('Fehler beim Speichern','err');
+async function upsertProfile(data){
+  await sbPost('/rest/v1/profiles',{id:S.userId,...data},S.token);
 }
-
-// ── Belege ────────────────────────────────────────────────────────────────────
 async function loadBelege(){
-  state.syncing=true;render();
-  const {data}=await sb.from('belege').select('*').eq('user_id',state.user.id).order('erfasst',{ascending:false});
-  if(data) state.belege=data;
-  state.syncing=false;render();
+  const d=await sbGet('/rest/v1/belege?user_id=eq.'+S.userId+'&order=erfasst.desc&select=*',S.token);
+  if(Array.isArray(d))S.belege=d;
+}
+async function insertBeleg(b){
+  const d=await sbPost('/rest/v1/belege',{...b,user_id:S.userId},S.token);
+  if(Array.isArray(d)&&d[0])S.belege.unshift(d[0]);
+  else await loadBelege();
+}
+async function updateBelegDB(id,data){
+  await sbPatch('/rest/v1/belege?id=eq.'+id+'&user_id=eq.'+S.userId,data,S.token);
+  S.belege=S.belege.map(b=>b.id===id?{...b,...data}:b);
+}
+async function deleteBelegDB(id){
+  await sbDelete('/rest/v1/belege?id=eq.'+id+'&user_id=eq.'+S.userId,S.token);
+  S.belege=S.belege.filter(b=>b.id!==id);
 }
 
-async function saveBeleg(beleg){
-  const {data,error}=await sb.from('belege').insert({...beleg,user_id:state.user.id}).select().single();
-  if(data){state.belege.unshift(data);showToast('Beleg gespeichert ✓');}
-  else showToast('Fehler','err');
-  return data;
+// ── Auth actions ──────────────────────────────────────────────────────────────
+async function doLogin(){
+  S.authErr='';render();
+  try{
+    const d=await signIn(S.authEmail,S.authPass);
+    S.token=d.access_token;S.userId=d.user?.id;
+    saveLocal();
+    await afterLogin();
+  }catch(e){S.authErr=e.message;render();}
+}
+async function doRegister(){
+  S.authErr='';render();
+  if(!S.authName.trim()){S.authErr='Bitte Name eingeben';render();return;}
+  try{
+    const d=await signUp(S.authEmail,S.authPass);
+    S.token=d.access_token;S.userId=d.user?.id;
+    saveLocal();
+    await afterLogin();
+  }catch(e){S.authErr=e.message;render();}
+}
+async function doLogout(){
+  try{await signOut(S.token);}catch(e){}
+  localStorage.removeItem('sb_token');localStorage.removeItem('sb_uid');
+  S.token=null;S.userId=null;S.profile=null;S.belege=[];
+  S.screen='auth';render();
+}
+async function afterLogin(){
+  const has=await loadProfile();
+  if(!has){
+    S.screen='setup';
+    S.draft={name:S.authName||'',logo:'',emoji:'💼',pin:'',kategorien:DEFAULT_KATS.map(k=>({...k}))};
+  }else{
+    const pinOk=sessionStorage.getItem('pin_ok');
+    S.screen=pinOk===S.userId?'app':'pin';
+    if(S.screen==='app')await loadBelege();
+  }
+  render();
 }
 
-async function updateBeleg(id,data){
-  const {error}=await sb.from('belege').update(data).eq('id',id).eq('user_id',state.user.id);
-  if(!error){state.belege=state.belege.map(b=>b.id===id?{...b,...data}:b);showToast('Gespeichert ✓');}
-  else showToast('Fehler','err');
+// ── PIN ────────────────────────────────────────────────────────────────────────
+function pinPress(d){
+  if(S.pinInput.length>=4)return;
+  S.pinInput+=d;
+  if(S.pinInput.length===4){
+    if(S.pinInput===S.profile?.pin){
+      S.screen='app';S.pinError='';
+      sessionStorage.setItem('pin_ok',S.userId);
+      loadBelege().then(()=>render());
+    }else{
+      S.pinError='Falscher PIN — nochmal versuchen.';
+      setTimeout(()=>{S.pinInput='';S.pinError='';render();},900);
+      S.pinInput='';
+    }
+  }
+  render();
+}
+function pinDel(){if(S.pinInput.length>0){S.pinInput=S.pinInput.slice(0,-1);render();}}
+
+// ── Setup ──────────────────────────────────────────────────────────────────────
+function handleLogoUpload(file){
+  if(!file)return;
+  const r=new FileReader();
+  r.onload=e=>{S.draft.logo=e.target.result;render();};
+  r.readAsDataURL(file);
+}
+async function saveSetup(){
+  const d=S.draft;
+  if(!d.name.trim()){toast('Bitte Name eingeben','err');return;}
+  if(!d.pin||d.pin.length<4){toast('PIN muss 4 Ziffern haben','err');return;}
+  const kats=d.kategorien.filter(k=>k.label.trim());
+  const profileData={name:d.name.trim(),logo_url:d.logo||'',emoji:d.emoji||'💼',pin:d.pin,kategorien:kats};
+  await upsertProfile(profileData);
+  S.profile=profileData;
+  S.screen='app';
+  sessionStorage.setItem('pin_ok',S.userId);
+  await loadBelege();render();toast('Einrichtung gespeichert ✓');
 }
 
-async function deleteBeleg(id){
-  const {error}=await sb.from('belege').delete().eq('id',id).eq('user_id',state.user.id);
-  if(!error){state.belege=state.belege.filter(b=>b.id!==id);showToast('Beleg gelöscht');}
+// ── Claude ────────────────────────────────────────────────────────────────────
+async function analyzeClaude(text,filename){
+  if(!S.apiKey)throw new Error('kein_key');
+  const kats=S.profile?.kategorien||DEFAULT_KATS;
+  const prompt='Analysiere diesen Beleg und gib NUR JSON zurück:\n{"datum":"YYYY-MM-DD","betrag":Zahl,"art":"ausgabe","lieferant":"Name","kategorie":"'+kats.map(k=>k.id).join('/')+'","beschreibung":"max 60 Zeichen"}\nKategorien: '+kats.map(k=>k.id+'='+k.label).join(', ')+'\nDatei: '+filename+'\n'+text.substring(0,1500);
+  const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':S.apiKey,'anthropic-version':'2023-06-01'},body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:500,messages:[{role:'user',content:prompt}]})});
+  const data=await r.json();
+  return JSON.parse(data.content?.map(i=>i.text||'').join('').trim().replace(/```json|```/g,'').trim());
 }
-
-// ── Claude API ────────────────────────────────────────────────────────────────
-async function analyzeWithClaude(text,filename){
-  if(!state.apiKey)throw new Error('kein_key');
-  const kats=(state.profile?.kategorien||DEFAULT_KATS);
-  const prompt='Du bist Buchhaltungsassistent. Analysiere diesen Beleg und gib NUR JSON zurück:\n{"datum":"YYYY-MM-DD","betrag":Zahl,"art":"ausgabe","lieferant":"Name","kategorie":"'+kats.map(k=>k.id).join('/')+'","beschreibung":"max 60 Zeichen"}\nKategorien: '+kats.map(k=>k.id+'='+k.label).join(', ')+'\nDatei: '+filename+'\n'+text.substring(0,1500);
-  const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':state.apiKey,'anthropic-version':'2023-06-01'},body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:500,messages:[{role:'user',content:prompt}]})});
-  const d=await r.json();
-  return JSON.parse(d.content?.map(i=>i.text||'').join('').trim().replace(/```json|```/g,'').trim());
-}
-
 async function verarbeiteFile(file){
-  state.loading=true;render();
+  S.loading=true;render();
   try{
     let text=file.name;
     if(file.type==='text/plain')text=await file.text();
     else if(file.type==='application/pdf')text='PDF: '+file.name;
     else if(file.type.startsWith('image/'))text='Bild: '+file.name;
-    let result;
-    try{result=await analyzeWithClaude(text,file.name);}
+    let res;
+    try{res=await analyzeClaude(text,file.name);}
     catch(e){
-      if(e.message==='kein_key'){state.showKeyInput=true;state.loading=false;state.ansicht='neu';render();showToast('Bitte API-Key eingeben','err');return;}
-      const kats=state.profile?.kategorien||DEFAULT_KATS;
-      result={datum:new Date().toISOString().split('T')[0],betrag:0,art:'ausgabe',lieferant:file.name.replace(/\.[^.]+$/,''),kategorie:kats[kats.length-1].id,beschreibung:file.name};
+      if(e.message==='kein_key'){S.showKeyInput=true;S.loading=false;S.ansicht='neu';render();toast('Bitte API-Key eingeben','err');return;}
+      const kats=S.profile?.kategorien||DEFAULT_KATS;
+      res={datum:new Date().toISOString().split('T')[0],betrag:0,art:'ausgabe',lieferant:file.name.replace(/\.[^.]+$/,''),kategorie:kats[kats.length-1].id,beschreibung:file.name};
     }
-    const monat=result.datum?result.datum.substring(0,7):state.aktuellerMonat;
-    await saveBeleg({datum:result.datum||new Date().toISOString().split('T')[0],betrag:result.betrag||0,art:result.art||'ausgabe',lieferant:result.lieferant||file.name,kategorie:result.kategorie||(state.profile?.kategorien||DEFAULT_KATS)[0].id,beschreibung:result.beschreibung||file.name,monat,dateiname:file.name});
-  }catch(e){showToast('Fehler beim Verarbeiten','err');}
-  state.loading=false;render();
+    const kats=S.profile?.kategorien||DEFAULT_KATS;
+    const monat=res.datum?res.datum.substring(0,7):S.monat;
+    await insertBeleg({datum:res.datum||new Date().toISOString().split('T')[0],betrag:res.betrag||0,art:res.art||'ausgabe',lieferant:res.lieferant||file.name,kategorie:res.kategorie||kats[0].id,beschreibung:res.beschreibung||file.name,monat,dateiname:file.name});
+    toast('Beleg erfasst ✓');
+  }catch(e){toast('Fehler: '+e.message,'err');}
+  S.loading=false;render();
 }
 
 function exportCSV(){
-  const liste=state.belege.filter(b=>b.monat===state.aktuellerMonat);
-  if(!liste.length){showToast('Keine Belege','err');return;}
+  const liste=S.belege.filter(b=>b.monat===S.monat);
+  if(!liste.length){toast('Keine Belege','err');return;}
   const kopf='Datum;Lieferant;Beschreibung;Kategorie;Art;Betrag\n';
-  const zeilen=liste.map(b=>b.datum+';'+(b.lieferant||'')+';'+(b.beschreibung||'')+';'+(kat(b.kategorie)?.label||'')+';'+(b.art==='ausgabe'?'Ausgabe':'Einnahme')+';'+(b.betrag||0).toFixed(2)).join('\n');
-  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['\uFEFF'+kopf+zeilen],{type:'text/csv;charset=utf-8;'}));
-  a.download='Belege_'+monatLabel(state.aktuellerMonat).replace(' ','_')+'.csv';a.click();
-  showToast('CSV exportiert ✓');
-}
-
-// ── PIN ───────────────────────────────────────────────────────────────────────
-function pinPress(digit){
-  if(state.pinInput.length>=4)return;
-  state.pinInput+=digit;
-  if(state.pinInput.length===4){
-    if(state.pinInput===state.profile?.pin){
-      state.screen='app';state.pinError='';
-      try{sessionStorage.setItem('aicircle-pin-ok',state.user.id);}catch(e){}
-    }else{
-      state.pinError='Falscher PIN — nochmal versuchen.';
-      setTimeout(()=>{state.pinInput='';state.pinError='';render();},900);
-      state.pinInput='';
-    }
-  }
-  render();
-}
-function pinDel(){if(state.pinInput.length>0){state.pinInput=state.pinInput.slice(0,-1);render();}}
-
-// ── Setup ─────────────────────────────────────────────────────────────────────
-function handleLogoUpload(file){
-  if(!file)return;
-  const r=new FileReader();
-  r.onload=e=>{state.setupDraft.logo=e.target.result;render();};
-  r.readAsDataURL(file);
-}
-
-async function saveSetup(){
-  const d=state.setupDraft;
-  if(!d.name.trim()){showToast('Bitte Name eingeben','err');return;}
-  if(!d.pin||d.pin.length<4){showToast('PIN muss 4 Ziffern haben','err');return;}
-  const kats=d.kategorien.filter(k=>k.label.trim());
-  await saveProfile({name:d.name.trim(),logo_url:d.logo||'',emoji:d.emoji||'💼',pin:d.pin,kategorien:kats});
-  state.profile={...state.profile,name:d.name.trim(),logo_url:d.logo||'',emoji:d.emoji||'💼',pin:d.pin,kategorien:kats};
-  state.screen='app';
-  try{sessionStorage.setItem('aicircle-pin-ok',state.user.id);}catch(e){}
-  render();
+  const z=liste.map(b=>b.datum+';'+(b.lieferant||'')+';'+(b.beschreibung||'')+';'+(kk(b.kategorie)?.label||'')+';'+(b.art==='ausgabe'?'Ausgabe':'Einnahme')+';'+(b.betrag||0).toFixed(2)).join('\n');
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['\uFEFF'+kopf+z],{type:'text/csv;charset=utf-8;'}));
+  a.download='Belege_'+mL(S.monat).replace(' ','_')+'.csv';a.click();toast('CSV exportiert ✓');
 }
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 async function boot(){
-  try{const k=localStorage.getItem(API_KEY_STORE);if(k)state.apiKey=k;}catch(e){}
-  const {data:{session}}=await sb.auth.getSession();
-  if(session){
-    state.user=session.user;
-    const hasProfile=await loadProfile();
-    if(!hasProfile){
-      state.screen='setup';
-      state.setupDraft={name:'',logo:'',emoji:'💼',pin:'',kategorien:DEFAULT_KATS.map(k=>({...k}))};
-    } else {
-      const pinOk=sessionStorage.getItem('aicircle-pin-ok');
-      state.screen=pinOk===state.user.id?'app':'pin';
-      if(state.screen==='app') await loadBelege();
-    }
-  } else {
-    state.screen='auth';
+  loadLocal();
+  if(S.token&&S.userId){
+    try{await afterLogin();}
+    catch(e){S.token=null;S.userId=null;S.screen='auth';render();}
+  }else{
+    S.screen='auth';render();
   }
-  render();
-
-  sb.auth.onAuthStateChange(async(event,session)=>{
-    if(event==='SIGNED_IN'&&session){
-      state.user=session.user;
-      const hasProfile=await loadProfile();
-      if(!hasProfile){
-        state.screen='setup';
-        state.setupDraft={name:'',logo:'',emoji:'💼',pin:'',kategorien:DEFAULT_KATS.map(k=>({...k}))};
-      } else {
-        state.screen='pin';
-      }
-      render();
-    }
-  });
 }
 
 // ── Render ────────────────────────────────────────────────────────────────────
 function render(){
   const app=document.getElementById('app');
+  if(S.screen==='loading'){app.innerHTML='<div class="spinner"></div><div style="color:var(--ink3);font-size:13px;margin-top:12px">Wird geladen…</div>';return;}
 
-  if(state.screen==='loading'){
-    app.innerHTML='<div class="spinner"></div><div style="color:var(--ink3);font-size:13px;margin-top:12px">Wird geladen…</div>';
-    return;
-  }
-
-  if(state.screen==='auth'){
-    const isLogin=state.authMode==='login';
+  if(S.screen==='auth'){
+    const isL=S.authMode==='login';
     app.innerHTML='<div class="fullscreen dark-screen">'
       +'<div class="auth-logo">💼</div>'
       +'<div class="auth-title">Meine Belege</div>'
-      +'<div class="auth-sub">'+(isLogin?'Willkommen zurück':'Neues Konto erstellen')+'</div>'
+      +'<div class="auth-sub">'+(isL?'Willkommen zurück':'Neues Konto erstellen')+'</div>'
       +'<div class="auth-form">'
-      +(!isLogin?'<input class="auth-inp" placeholder="Name deines Betriebs" value="'+state.authName+'" oninput="state.authName=this.value"/>':'')
-      +'<input class="auth-inp" type="email" placeholder="E-Mail" value="'+state.authEmail+'" oninput="state.authEmail=this.value"/>'
-      +'<input class="auth-inp" type="password" placeholder="Passwort" value="'+state.authPassword+'" oninput="state.authPassword=this.value" onkeydown="if(event.key===\'Enter\')'+(isLogin?'doLogin()':'doRegister()')+'"/>'
-      +'<div class="auth-error">'+state.authError+'</div>'
-      +'<button class="auth-btn" onclick="'+(isLogin?'doLogin()':'doRegister()')+'">'+( isLogin?'Einloggen':'Registrieren')+'</button>'
+      +(!isL?'<input class="auth-inp" placeholder="Name deines Betriebs" value="'+S.authName+'" oninput="S.authName=this.value"/>':'')
+      +'<input class="auth-inp" type="email" placeholder="E-Mail" value="'+S.authEmail+'" oninput="S.authEmail=this.value"/>'
+      +'<input class="auth-inp" type="password" placeholder="Passwort (min. 6 Zeichen)" value="'+S.authPass+'" oninput="S.authPass=this.value" onkeydown="if(event.key===\'Enter\')'+(isL?'doLogin()':'doRegister()')+'"/>'
+      +'<div class="auth-error">'+S.authErr+'</div>'
+      +'<button class="auth-btn" onclick="'+(isL?'doLogin()':'doRegister()')+'">'+( isL?'Einloggen':'Registrieren')+'</button>'
       +'</div>'
-      +'<div class="auth-switch">'+(isLogin?'Noch kein Konto? <span onclick="state.authMode=\'register\';state.authError=\'\';render()">Registrieren</span>':'Schon registriert? <span onclick="state.authMode=\'login\';state.authError=\'\';render()">Einloggen</span>')+'</div>'
-      +'<div class="ai-badge" style="margin-top:24px">✦ AI Circle Community Tool ✦</div>'
+      +'<div class="auth-switch">'+(isL?'Noch kein Konto? <span onclick="S.authMode=\'register\';S.authErr=\'\';render()">Registrieren</span>':'Schon registriert? <span onclick="S.authMode=\'login\';S.authErr=\'\';render()">Einloggen</span>')+'</div>'
+      +'<div class="ai-badge" style="margin-top:24px;color:rgba(255,255,255,0.3)">✦ AI Circle Community Tool ✦</div>'
       +'</div>';
     return;
   }
 
-  if(state.screen==='setup'){
-    const d=state.setupDraft;
-    const logoSection=d.logo
-      ?'<img src="'+d.logo+'" class="logo-preview" style="margin-bottom:8px"/><br><button onclick="state.setupDraft.logo=\'\';render()" style="background:none;border:none;color:var(--red);font-size:12px;cursor:pointer">Entfernen</button>'
+  if(S.screen==='setup'){
+    const d=S.draft;
+    const logoSec=d.logo
+      ?'<img src="'+d.logo+'" class="logo-preview" style="margin-bottom:8px"/><br><button onclick="S.draft.logo=\'\';render()" style="background:none;border:none;color:var(--red);font-size:12px;cursor:pointer">Entfernen</button>'
       :'<div style="font-size:28px;margin-bottom:6px">🖼️</div><div style="font-size:13px;color:var(--ink3)">Logo hochladen (optional)</div>';
-    const katRows=d.kategorien.map((k,i)=>'<div class="kat-row"><input class="kat-emoji-inp" value="'+k.icon+'" oninput="state.setupDraft.kategorien['+i+'].icon=this.value" maxlength="2"/><input class="kat-name-inp" value="'+k.label+'" oninput="state.setupDraft.kategorien['+i+'].label=this.value" placeholder="Kategorie"/><button class="kat-del" onclick="state.setupDraft.kategorien.splice('+i+',1);render()">✕</button></div>').join('');
+    const katR=d.kategorien.map((k,i)=>'<div class="kat-row"><input class="kat-emoji-inp" value="'+k.icon+'" oninput="S.draft.kategorien['+i+'].icon=this.value" maxlength="2"/><input class="kat-name-inp" value="'+k.label+'" oninput="S.draft.kategorien['+i+'].label=this.value" placeholder="Kategorie"/><button class="kat-del" onclick="S.draft.kategorien.splice('+i+',1);render()">✕</button></div>').join('');
     app.innerHTML='<div class="fullscreen light-screen">'
       +'<div class="setup-header"><div style="font-size:44px;margin-bottom:8px">💼</div><h1>Einrichtung</h1><p>Richte deine App ein — dauert 2 Minuten.</p></div>'
-      +'<div class="setup-section"><div class="setup-label">Betriebsname *</div><input class="setup-inp" placeholder="z.B. Salon Walenta" value="'+d.name+'" oninput="state.setupDraft.name=this.value"/></div>'
-      +'<div class="setup-section"><div class="setup-label">Logo</div><div class="logo-upload-zone" onclick="document.getElementById(\'logoInput\').click()">'+logoSection+'</div><input type="file" id="logoInput" accept="image/*" style="display:none" onchange="handleLogoUpload(this.files[0])"/></div>'
-      +'<div class="setup-section"><div class="setup-label">Emoji (falls kein Logo)</div><input class="setup-inp" placeholder="💼" value="'+d.emoji+'" oninput="state.setupDraft.emoji=this.value" style="font-size:24px;text-align:center"/></div>'
-      +'<div class="setup-section"><div class="setup-label">PIN (4 Ziffern) *</div><input class="setup-inp" type="password" inputmode="numeric" maxlength="4" placeholder="z.B. 1234" value="'+d.pin+'" oninput="state.setupDraft.pin=this.value"/></div>'
-      +'<div class="setup-section"><div class="setup-label">Kategorien</div><div class="kat-list">'+katRows+'</div><button class="add-kat-btn" onclick="state.setupDraft.kategorien.push({id:\'k\'+Date.now(),icon:\'📦\',label:\'\'});render()">+ Hinzufügen</button></div>'
+      +'<div class="setup-section"><div class="setup-label">Betriebsname *</div><input class="setup-inp" placeholder="z.B. Salon Walenta" value="'+d.name+'" oninput="S.draft.name=this.value"/></div>'
+      +'<div class="setup-section"><div class="setup-label">Logo</div><div class="logo-upload-zone" onclick="document.getElementById(\'li\').click()">'+logoSec+'</div><input type="file" id="li" accept="image/*" style="display:none" onchange="handleLogoUpload(this.files[0])"/></div>'
+      +'<div class="setup-section"><div class="setup-label">Emoji (falls kein Logo)</div><input class="setup-inp" placeholder="💼" value="'+d.emoji+'" oninput="S.draft.emoji=this.value" style="font-size:24px;text-align:center"/></div>'
+      +'<div class="setup-section"><div class="setup-label">PIN (4 Ziffern) *</div><input class="setup-inp" type="password" inputmode="numeric" maxlength="4" placeholder="z.B. 1234" value="'+d.pin+'" oninput="S.draft.pin=this.value"/></div>'
+      +'<div class="setup-section"><div class="setup-label">Kategorien</div><div class="kat-list">'+katR+'</div><button class="add-kat-btn" onclick="S.draft.kategorien.push({id:\'k\'+Date.now(),icon:\'📦\',label:\'\'});render()">+ Hinzufügen</button></div>'
       +'<button class="setup-save" onclick="saveSetup()">App starten →</button>'
       +'<div class="ai-badge">✦ AI Circle Community Tool ✦</div>'
       +'</div>';
     return;
   }
 
-  if(state.screen==='pin'){
-    const p=state.profile;
-    const logoHtml=p?.logo_url?'<img src="'+p.logo_url+'" class="pin-logo-img"/>'  :'<div class="pin-logo-emoji">'+(p?.emoji||'💼')+'</div>';
-    const dots=[0,1,2,3].map(i=>'<div class="pin-dot'+(i<state.pinInput.length?' filled':'')+'"></div>').join('');
+  if(S.screen==='pin'){
+    const p=S.profile;
+    const logoH=p?.logo_url?'<img src="'+p.logo_url+'" class="pin-logo-img"/>'  :'<div class="pin-logo-emoji">'+(p?.emoji||'💼')+'</div>';
+    const dots=[0,1,2,3].map(i=>'<div class="pin-dot'+(i<S.pinInput.length?' filled':'')+'"></div>').join('');
     const nums=[[1,2,3],[4,5,6],[7,8,9]].map(row=>row.map(n=>'<button class="pin-btn" onclick="pinPress(\''+n+'\')">'+n+'</button>').join('')).join('');
-    app.innerHTML='<div class="fullscreen dark-screen">'+logoHtml+'<div class="pin-brand">'+(p?.name||'')+'</div><div class="pin-title">Meine Belege</div><div class="pin-dots">'+dots+'</div><div class="pin-error">'+state.pinError+'</div><div class="pin-grid">'+nums+'<div class="pin-btn empty"></div><button class="pin-btn" onclick="pinPress(\'0\')">0</button><button class="pin-btn" style="font-size:16px" onclick="pinDel()">⌫</button></div><button class="pin-logout" onclick="doLogout()">Abmelden</button></div>';
+    app.innerHTML='<div class="fullscreen dark-screen">'+logoH+'<div class="pin-brand">'+(p?.name||'')+'</div><div class="pin-title">Meine Belege</div><div class="pin-dots">'+dots+'</div><div class="pin-error">'+S.pinError+'</div><div class="pin-grid">'+nums+'<div class="pin-btn empty"></div><button class="pin-btn" onclick="pinPress(\'0\')">0</button><button class="pin-btn" style="font-size:16px" onclick="pinDel()">⌫</button></div><button class="pin-logout" onclick="doLogout()">Abmelden</button></div>';
     return;
   }
 
-  // ── APP ───────────────────────────────────────────────────────────────────
-  const {ansicht,aktuellerMonat,belege,loading,editId,syncing}=state;
-  const p=state.profile;
+  // APP
+  const p=S.profile;
   const kats=p?.kategorien||DEFAULT_KATS;
-  const bfm=belege.filter(b=>b.monat===aktuellerMonat);
-  const ausgaben=bfm.filter(b=>b.art==='ausgabe').reduce((s,b)=>s+(b.betrag||0),0);
-  const einnahmen=bfm.filter(b=>b.art==='einnahme').reduce((s,b)=>s+(b.betrag||0),0);
-  const katSummen=kats.map(k=>({...k,summe:bfm.filter(b=>b.kategorie===k.id&&b.art==='ausgabe').reduce((s,b)=>s+(b.betrag||0),0)})).filter(k=>k.summe>0).sort((a,b)=>b.summe-a.summe);
-  const alleSet=new Set(belege.map(b=>b.monat));alleSet.add(getMonat());
-  const alleMonate=Array.from(alleSet).sort().reverse();
-  const monatOpts=alleMonate.map(m=>'<option value="'+m+'"'+(m===aktuellerMonat?' selected':'')+'>'+monatLabel(m)+'</option>').join('');
-  const logoHtml=p?.logo_url?'<img src="'+p.logo_url+'" class="header-logo-img"/>'  :'<div class="header-logo-emoji">'+(p?.emoji||'💼')+'</div>';
+  const bfm=S.belege.filter(b=>b.monat===S.monat);
+  const ausg=bfm.filter(b=>b.art==='ausgabe').reduce((s,b)=>s+(b.betrag||0),0);
+  const einn=bfm.filter(b=>b.art==='einnahme').reduce((s,b)=>s+(b.betrag||0),0);
+  const katS=kats.map(k=>({...k,summe:bfm.filter(b=>b.kategorie===k.id&&b.art==='ausgabe').reduce((s,b)=>s+(b.betrag||0),0)})).filter(k=>k.summe>0).sort((a,b)=>b.summe-a.summe);
+  const allM=new Set(S.belege.map(b=>b.monat));allM.add(getMonat());
+  const mOpts=Array.from(allM).sort().reverse().map(m=>'<option value="'+m+'"'+(m===S.monat?' selected':'')+'>'+mL(m)+'</option>').join('');
+  const logoH=p?.logo_url?'<img src="'+p.logo_url+'" class="header-logo-img"/>'  :'<div class="header-logo-emoji">'+(p?.emoji||'💼')+'</div>';
 
   let inhalt='';
+  const {ansicht}=S;
 
   if(ansicht==='dashboard'){
-    const bars=katSummen.map(k=>'<div style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:3px"><span>'+k.icon+' '+k.label+'</span><span style="font-weight:600">'+euro(k.summe)+'</span></div><div class="bar-track"><div class="bar-fill" style="background:#7C6B8A;width:'+Math.min(100,(k.summe/ausgaben)*100)+'%"></div></div></div>').join('');
-    inhalt='<div style="font-size:12px;color:var(--ink3);margin-bottom:12px">'+monatLabel(aktuellerMonat)+' · '+bfm.length+' Belege'+(syncing?' · <span class="spinner-sm"></span>':'')+'</div>'
-      +'<div class="grid2"><div class="card" style="margin-bottom:0"><div class="stat-label">Ausgaben</div><div class="stat-value" style="color:var(--red)">'+euro(ausgaben)+'</div><div class="stat-sub">'+bfm.filter(b=>b.art==='ausgabe').length+' Belege</div></div><div class="card" style="margin-bottom:0"><div class="stat-label">Einnahmen</div><div class="stat-value" style="color:var(--green)">'+euro(einnahmen)+'</div><div class="stat-sub">'+bfm.filter(b=>b.art==='einnahme').length+' Belege</div></div></div>'
-      +(katSummen.length>0?'<div class="card"><div class="section-title">Ausgaben nach Kategorie</div>'+bars+'</div>':'')
-      +(bfm.length===0?'<div class="empty"><div class="empty-icon">📂</div><div style="font-size:14px">Noch keine Belege für<br><strong>'+monatLabel(aktuellerMonat)+'</strong>.</div><button class="btn-primary" style="margin-top:16px;width:auto;padding:10px 24px" onclick="setAnsicht(\'neu\')">Ersten Beleg erfassen</button></div>':'')
-      +(bfm.length>0?'<button class="btn-primary" onclick="exportCSV()">📤 Exportieren für Steuerberater</button>':'');
+    const bars=katS.map(k=>'<div style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:3px"><span>'+k.icon+' '+k.label+'</span><span style="font-weight:600">'+eur(k.summe)+'</span></div><div class="bar-track"><div class="bar-fill" style="background:#7C6B8A;width:'+Math.min(100,ausg?((k.summe/ausg)*100):0)+'%"></div></div></div>').join('');
+    inhalt='<div style="font-size:12px;color:var(--ink3);margin-bottom:12px">'+mL(S.monat)+' · '+bfm.length+' Belege</div>'
+      +'<div class="grid2"><div class="card" style="margin-bottom:0"><div class="stat-label">Ausgaben</div><div class="stat-value" style="color:var(--red)">'+eur(ausg)+'</div><div class="stat-sub">'+bfm.filter(b=>b.art==='ausgabe').length+' Belege</div></div><div class="card" style="margin-bottom:0"><div class="stat-label">Einnahmen</div><div class="stat-value" style="color:var(--green)">'+eur(einn)+'</div><div class="stat-sub">'+bfm.filter(b=>b.art==='einnahme').length+' Belege</div></div></div>'
+      +(katS.length?'<div class="card"><div class="section-title">Ausgaben nach Kategorie</div>'+bars+'</div>':'')
+      +(bfm.length===0?'<div class="empty"><div class="empty-icon">📂</div><div style="font-size:14px">Noch keine Belege für<br><strong>'+mL(S.monat)+'</strong>.</div><button class="btn-primary" style="margin-top:16px;width:auto;padding:10px 24px" onclick="S.ansicht=\'neu\';render()">Ersten Beleg erfassen</button></div>':'')
+      +(bfm.length?'<button class="btn-primary" onclick="exportCSV()">📤 Exportieren für Steuerberater</button>':'');
   }
 
   else if(ansicht==='belege'){
     const items=bfm.map(b=>{
-      const k=kat(b.kategorie);
-      if(editId===b.id){
-        const eOpts=kats.map(k=>'<option value="'+k.id+'"'+(k.id===state.editData.kategorie?' selected':'')+'>'+k.icon+' '+k.label+'</option>').join('');
-        return'<div class="beleg-item"><div class="edit-form"><input class="inp" type="date" value="'+(state.editData.datum||'')+'" onchange="state.editData.datum=this.value"/><input class="inp" placeholder="Lieferant" value="'+(state.editData.lieferant||'')+'" oninput="state.editData.lieferant=this.value"/><input class="inp" placeholder="Beschreibung" value="'+(state.editData.beschreibung||'')+'" oninput="state.editData.beschreibung=this.value"/><div class="form-row"><input class="inp" placeholder="Betrag" value="'+(state.editData.betrag||'')+'" oninput="state.editData.betrag=this.value" style="flex:1"/><select class="inp" onchange="state.editData.art=this.value" style="flex:1"><option value="ausgabe"'+(state.editData.art==='ausgabe'?' selected':'')+'>Ausgabe</option><option value="einnahme"'+(state.editData.art==='einnahme'?' selected':'')+'>Einnahme</option></select></div><select class="inp" onchange="state.editData.kategorie=this.value">'+eOpts+'</select><div class="edit-actions"><button class="btn-save" onclick="speicherEdit()">Speichern</button><button class="btn-cancel" onclick="state.editId=null;render()">Abbrechen</button></div></div></div>';
+      const k=kk(b.kategorie);
+      if(S.editId===b.id){
+        const eO=kats.map(k=>'<option value="'+k.id+'"'+(k.id===S.editData.kategorie?' selected':'')+'>'+k.icon+' '+k.label+'</option>').join('');
+        return'<div class="beleg-item"><div class="edit-form"><input class="inp" type="date" value="'+(S.editData.datum||'')+'" onchange="S.editData.datum=this.value"/><input class="inp" placeholder="Lieferant" value="'+(S.editData.lieferant||'')+'" oninput="S.editData.lieferant=this.value"/><input class="inp" placeholder="Beschreibung" value="'+(S.editData.beschreibung||'')+'" oninput="S.editData.beschreibung=this.value"/><div class="form-row"><input class="inp" placeholder="Betrag" value="'+(S.editData.betrag||'')+'" oninput="S.editData.betrag=this.value" style="flex:1"/><select class="inp" onchange="S.editData.art=this.value" style="flex:1"><option value="ausgabe"'+(S.editData.art==='ausgabe'?' selected':'')+'>Ausgabe</option><option value="einnahme"'+(S.editData.art==='einnahme'?' selected':'')+'>Einnahme</option></select></div><select class="inp" onchange="S.editData.kategorie=this.value">'+eO+'</select><div class="edit-actions"><button class="btn-save" onclick="doEdit()">Speichern</button><button class="btn-cancel" onclick="S.editId=null;render()">Abbrechen</button></div></div></div>';
       }
-      return'<div class="beleg-item"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px"><div style="flex:1;min-width:0"><div><span class="beleg-tag" style="background:#7C6B8A1A;color:#7C6B8A">'+(k?.icon||'📦')+' '+(k?.label||'')+'</span><span style="font-size:10px;color:var(--ink3);margin-left:4px">'+b.datum+'</span></div><div class="beleg-name">'+(b.lieferant||'—')+'</div><div class="beleg-desc">'+(b.beschreibung||'')+'</div></div><div class="beleg-amount" style="color:'+(b.art==='ausgabe'?'var(--red)':'var(--green)')+'">'+(b.art==='ausgabe'?'−':'+')+euro(b.betrag||0)+'</div></div><div class="beleg-actions"><button class="btn-sm btn-edit" onclick="state.editId=\''+b.id+'\';state.editData={...state.belege.find(x=>x.id===\''+b.id+'\')};render()">✏️ Bearbeiten</button><button class="btn-sm btn-del" onclick="if(confirm(\'Löschen?\'))deleteBeleg(\''+b.id+'\').then(()=>render())">🗑️ Löschen</button></div></div>';
+      return'<div class="beleg-item"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px"><div style="flex:1;min-width:0"><div><span class="beleg-tag" style="background:#7C6B8A1A;color:#7C6B8A">'+(k?.icon||'📦')+' '+(k?.label||'')+'</span><span style="font-size:10px;color:var(--ink3);margin-left:4px">'+b.datum+'</span></div><div class="beleg-name">'+(b.lieferant||'—')+'</div><div class="beleg-desc">'+(b.beschreibung||'')+'</div></div><div class="beleg-amount" style="color:'+(b.art==='ausgabe'?'var(--red)':'var(--green)')+'">'+(b.art==='ausgabe'?'−':'+')+eur(b.betrag||0)+'</div></div><div class="beleg-actions"><button class="btn-sm btn-edit" onclick="S.editId=\''+b.id+'\';S.editData=Object.assign({},S.belege.find(x=>x.id===\''+b.id+'\'));render()">✏️ Bearbeiten</button><button class="btn-sm btn-del" onclick="if(confirm(\'Löschen?\'))deleteBelegDB(\''+b.id+'\').then(()=>render())">🗑️ Löschen</button></div></div>';
     }).join('');
-    inhalt='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-size:13px;color:var(--ink3)">'+bfm.length+' Belege · '+monatLabel(aktuellerMonat)+'</div>'+(bfm.length>0?'<button class="btn-outline" onclick="exportCSV()">Exportieren</button>':'')+'</div>'+(bfm.length===0?'<div class="empty"><div class="empty-icon">🗂️</div><div style="font-size:14px">Keine Belege in diesem Monat.</div></div>':items);
+    inhalt='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-size:13px;color:var(--ink3)">'+bfm.length+' Belege · '+mL(S.monat)+'</div>'+(bfm.length?'<button class="btn-outline" onclick="exportCSV()">Exportieren</button>':'')+'</div>'+(bfm.length===0?'<div class="empty"><div class="empty-icon">🗂️</div><div style="font-size:14px">Keine Belege in diesem Monat.</div></div>':items);
   }
 
   else if(ansicht==='neu'){
-    const keySection=state.showKeyInput||!state.apiKey
-      ?'<div class="card" style="margin-bottom:14px"><div class="section-title">🔑 Anthropic API-Key</div><p style="font-size:12px;color:var(--ink3);margin-bottom:10px;line-height:1.5">Für automatische Erkennung brauchst du einen Key von <strong>console.anthropic.com</strong>.</p><input class="inp" type="password" placeholder="sk-ant-…" id="apiKeyInput" value="'+state.apiKey+'" style="margin-bottom:8px"/><button class="btn-primary" style="padding:10px" onclick="saveApiKey()">Key speichern</button></div>'
-      :'<div class="key-section"><span style="font-size:12px;color:var(--accent);font-weight:500">🔑 API-Key hinterlegt</span><button onclick="state.showKeyInput=true;render()" style="background:none;border:none;font-size:11px;color:var(--ink3);cursor:pointer">ändern</button></div>';
-    const mOpts=kats.map(k=>'<option value="'+k.id+'"'+(state.manuell.kategorie===k.id?' selected':'')+'>'+k.icon+' '+k.label+'</option>').join('');
-    inhalt=keySection
-      +(loading?'<div class="analyzing"><div class="analyzing-dot"></div><span style="font-size:13px;color:var(--accent);font-weight:500">Beleg wird analysiert…</span></div>':'')
-      +'<div class="upload-zone" id="dropzone" onclick="document.getElementById(\'fileInput\').click()"><div style="font-size:32px;margin-bottom:8px">'+(loading?'⏳':'📎')+'</div><div style="font-size:14px;font-weight:600;color:var(--accent)">'+(loading?'Wird analysiert…':'PDF oder Foto hochladen')+'</div><div style="font-size:12px;color:var(--ink3);margin-top:4px">Tippe hier oder ziehe eine Datei rein</div></div>'
-      +'<input type="file" id="fileInput" accept=".pdf,image/*,.txt" multiple style="display:none" onchange="Array.from(this.files).forEach(verarbeiteFile);this.value=\'\'"/>'
-      +'<div class="card"><div class="section-title">Oder manuell eingeben</div><div class="form-group"><input class="inp" type="date" value="'+state.manuell.datum+'" onchange="state.manuell.datum=this.value"/><input class="inp" placeholder="Lieferant" value="'+state.manuell.lieferant+'" oninput="state.manuell.lieferant=this.value"/><input class="inp" placeholder="Beschreibung *" value="'+state.manuell.beschreibung+'" oninput="state.manuell.beschreibung=this.value"/><div class="form-row"><input class="inp" placeholder="Betrag *" value="'+state.manuell.betrag+'" oninput="state.manuell.betrag=this.value" style="flex:1"/><select class="inp" onchange="state.manuell.art=this.value" style="flex:1"><option value="ausgabe">Ausgabe</option><option value="einnahme">Einnahme</option></select></div><select class="inp" onchange="state.manuell.kategorie=this.value">'+mOpts+'</select><button class="btn-primary" onclick="speicherManuell()">Beleg speichern</button></div></div>';
+    const keySec=S.showKeyInput||!S.apiKey
+      ?'<div class="card" style="margin-bottom:14px"><div class="section-title">🔑 Anthropic API-Key</div><p style="font-size:12px;color:var(--ink3);margin-bottom:10px;line-height:1.5">Für automatische Erkennung: Key von <strong>console.anthropic.com</strong></p><input class="inp" type="password" placeholder="sk-ant-…" id="aki" value="'+S.apiKey+'" style="margin-bottom:8px"/><button class="btn-primary" style="padding:10px" onclick="saveKey()">Key speichern</button></div>'
+      :'<div class="key-section"><span style="font-size:12px;color:var(--accent);font-weight:500">🔑 API-Key hinterlegt</span><button onclick="S.showKeyInput=true;render()" style="background:none;border:none;font-size:11px;color:var(--ink3);cursor:pointer">ändern</button></div>';
+    const mO=kats.map(k=>'<option value="'+k.id+'"'+(S.manuell.kategorie===k.id?' selected':'')+'>'+k.icon+' '+k.label+'</option>').join('');
+    inhalt=keySec
+      +(S.loading?'<div class="analyzing"><div class="analyzing-dot"></div><span style="font-size:13px;color:var(--accent);font-weight:500">Beleg wird analysiert…</span></div>':'')
+      +'<div class="upload-zone" id="dz" onclick="document.getElementById(\'fi\').click()"><div style="font-size:32px;margin-bottom:8px">'+(S.loading?'⏳':'📎')+'</div><div style="font-size:14px;font-weight:600;color:var(--accent)">'+(S.loading?'Wird analysiert…':'PDF oder Foto hochladen')+'</div><div style="font-size:12px;color:var(--ink3);margin-top:4px">Tippe hier oder ziehe eine Datei rein</div></div>'
+      +'<input type="file" id="fi" accept=".pdf,image/*,.txt" multiple style="display:none" onchange="Array.from(this.files).forEach(verarbeiteFile);this.value=\'\'"/>'
+      +'<div class="card"><div class="section-title">Oder manuell eingeben</div><div class="form-group"><input class="inp" type="date" value="'+S.manuell.datum+'" onchange="S.manuell.datum=this.value"/><input class="inp" placeholder="Lieferant" value="'+S.manuell.lieferant+'" oninput="S.manuell.lieferant=this.value"/><input class="inp" placeholder="Beschreibung *" value="'+S.manuell.beschreibung+'" oninput="S.manuell.beschreibung=this.value"/><div class="form-row"><input class="inp" placeholder="Betrag *" value="'+S.manuell.betrag+'" oninput="S.manuell.betrag=this.value" style="flex:1"/><select class="inp" onchange="S.manuell.art=this.value" style="flex:1"><option value="ausgabe">Ausgabe</option><option value="einnahme">Einnahme</option></select></div><select class="inp" onchange="S.manuell.kategorie=this.value">'+mO+'</select><button class="btn-primary" onclick="doManuell()">Beleg speichern</button></div></div>';
   }
 
   else if(ansicht==='einstellungen'){
     inhalt='<div class="card"><div class="section-title">⚙️ Einstellungen</div><div style="display:flex;flex-direction:column;gap:14px">'
-      +'<div><div style="font-size:11px;color:var(--ink3);margin-bottom:4px">E-MAIL</div><div style="font-size:14px">'+( state.user?.email||'')+'</div></div>'
+      +'<div><div style="font-size:11px;color:var(--ink3);margin-bottom:4px">KONTO</div><div style="font-size:13px">'+(S.userId?.substring(0,8)+'…')+'</div></div>'
       +'<div><div style="font-size:11px;color:var(--ink3);margin-bottom:4px">BETRIEB</div><div style="font-size:14px;font-weight:600">'+(p?.name||'')+'</div></div>'
       +'<div><div style="font-size:11px;color:var(--ink3);margin-bottom:6px">KATEGORIEN</div>'+kats.map(k=>'<div style="font-size:13px;padding:3px 0">'+k.icon+' '+k.label+'</div>').join('')+'</div>'
-      +'<button class="btn-primary" onclick="loadBelege().then(()=>showToast(\'Synchronisiert ✓\'))" style="background:#F0EAF4;color:var(--accent)">🔄 Jetzt synchronisieren</button>'
+      +'<button class="btn-primary" onclick="loadBelege().then(()=>{toast(\'Synchronisiert ✓\');render();})" style="background:#F0EAF4;color:var(--accent)">🔄 Synchronisieren</button>'
       +'<button class="btn-primary" onclick="doLogout()" style="background:#FEF0EE;color:var(--red)">Abmelden</button>'
       +'</div></div>'
       +'<div style="text-align:center;margin-top:16px;font-size:11px;color:var(--ink3);letter-spacing:1px">✦ AI Circle Community Tool ✦</div>';
   }
 
-  app.innerHTML='<div class="header"><div class="header-left">'+logoHtml+'<div><div class="header-sub">'+(p?.name||'')+'</div><div class="header-title">Meine Belege</div></div></div><select class="month-select" onchange="state.aktuellerMonat=this.value;render()">'+monatOpts+'</select></div>'
-    +'<nav class="nav"><button class="nav-btn'+(ansicht==='dashboard'?' active':'')+'" onclick="setAnsicht(\'dashboard\')">Übersicht</button><button class="nav-btn'+(ansicht==='belege'?' active':'')+'" onclick="setAnsicht(\'belege\')">Belege</button><button class="nav-btn'+(ansicht==='neu'?' active':'')+'" onclick="setAnsicht(\'neu\')">+ Neu</button><button class="nav-btn'+(ansicht==='einstellungen'?' active':'')+'" onclick="setAnsicht(\'einstellungen\')">⚙️</button></nav>'
+  app.innerHTML='<div class="header"><div class="header-left">'+logoH+'<div><div class="header-sub">'+(p?.name||'')+'</div><div class="header-title">Meine Belege</div></div></div><select class="month-select" onchange="S.monat=this.value;render()">'+mOpts+'</select></div>'
+    +'<nav class="nav"><button class="nav-btn'+(ansicht==='dashboard'?' active':'')+'" onclick="S.ansicht=\'dashboard\';render()">Übersicht</button><button class="nav-btn'+(ansicht==='belege'?' active':'')+'" onclick="S.ansicht=\'belege\';render()">Belege</button><button class="nav-btn'+(ansicht==='neu'?' active':'')+'" onclick="S.ansicht=\'neu\';render()">+ Neu</button><button class="nav-btn'+(ansicht==='einstellungen'?' active':'')+'" onclick="S.ansicht=\'einstellungen\';render()">⚙️</button></nav>'
     +'<main class="main">'+inhalt+'</main>';
 
-  const dz=document.getElementById('dropzone');
+  const dz=document.getElementById('dz');
   if(dz){
     dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('drag');});
     dz.addEventListener('dragleave',()=>dz.classList.remove('drag'));
@@ -487,28 +486,24 @@ function render(){
   }
 }
 
-function setAnsicht(v){state.ansicht=v;render();}
-
-async function speicherManuell(){
-  if(!state.manuell.betrag||!state.manuell.beschreibung){showToast('Betrag und Beschreibung sind Pflichtfelder','err');return;}
-  const kats=state.profile?.kategorien||DEFAULT_KATS;
-  const monat=state.manuell.datum?state.manuell.datum.substring(0,7):state.aktuellerMonat;
-  await saveBeleg({datum:state.manuell.datum||new Date().toISOString().split('T')[0],betrag:parseFloat(state.manuell.betrag.replace(',','.')),art:state.manuell.art,lieferant:state.manuell.lieferant,kategorie:state.manuell.kategorie||kats[0].id,beschreibung:state.manuell.beschreibung,monat});
-  state.manuell=emptyManuell();setAnsicht('belege');
+async function doManuell(){
+  if(!S.manuell.betrag||!S.manuell.beschreibung){toast('Betrag und Beschreibung sind Pflichtfelder','err');return;}
+  const kats=S.profile?.kategorien||DEFAULT_KATS;
+  const monat=S.manuell.datum?S.manuell.datum.substring(0,7):S.monat;
+  await insertBeleg({datum:S.manuell.datum||new Date().toISOString().split('T')[0],betrag:parseFloat(S.manuell.betrag.replace(',','.')),art:S.manuell.art,lieferant:S.manuell.lieferant,kategorie:S.manuell.kategorie||kats[0].id,beschreibung:S.manuell.beschreibung,monat});
+  S.manuell=emptyM();S.ansicht='belege';render();toast('Beleg gespeichert ✓');
 }
-
-async function speicherEdit(){
-  const d=state.editData;
-  await updateBeleg(state.editId,{datum:d.datum,betrag:parseFloat(String(d.betrag).replace(',','.')),art:d.art,lieferant:d.lieferant,kategorie:d.kategorie,beschreibung:d.beschreibung});
-  state.editId=null;render();
+async function doEdit(){
+  const d=S.editData;
+  await updateBelegDB(S.editId,{datum:d.datum,betrag:parseFloat(String(d.betrag).replace(',','.')),art:d.art,lieferant:d.lieferant,kategorie:d.kategorie,beschreibung:d.beschreibung});
+  S.editId=null;render();
 }
-
-function saveApiKey(){
-  const v=document.getElementById('apiKeyInput')?.value?.trim();
-  if(!v){showToast('Bitte Key eingeben','err');return;}
-  state.apiKey=v;state.showKeyInput=false;
-  try{localStorage.setItem(API_KEY_STORE,v);}catch(e){}
-  showToast('API-Key gespeichert ✓');render();
+function saveKey(){
+  const v=document.getElementById('aki')?.value?.trim();
+  if(!v){toast('Bitte Key eingeben','err');return;}
+  S.apiKey=v;S.showKeyInput=false;
+  try{localStorage.setItem('sb_apikey',v);}catch(e){}
+  toast('API-Key gespeichert ✓');render();
 }
 
 boot();
