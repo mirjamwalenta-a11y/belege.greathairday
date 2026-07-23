@@ -396,22 +396,21 @@ async function verarbeiteFile(file){
     if(file.type==='text/plain')text=await file.text();
     else if(file.type==='application/pdf')text='PDF: '+file.name;
     else if(file.type.startsWith('image/'))text='Bild: '+file.name;
+    // Storage Upload immer zuerst, unabhängig vom API-Key
+    let datei_url=null;
+    try{
+      const pfad=S.userId+'/'+Date.now()+'_'+file.name.replace(/[^a-zA-Z0-9._-]/g,'_');
+      const upR=await fetch(SB_URL+'/storage/v1/object/belege/'+pfad,{method:'POST',headers:{'apikey':SB_KEY,'Authorization':'Bearer '+S.token,'Content-Type':file.type||'application/octet-stream'},body:file});
+      if(upR.ok){datei_url=SB_URL+'/storage/v1/object/belege/'+pfad;}
+    }catch(e){console.warn('Storage Upload fehlgeschlagen:',e);}
     let res;
     try{res=await analyzeClaude(text,file.name);}
     catch(e){
-      if(e.message==='kein_key'){S.showKeyInput=true;S.loading=false;S.ansicht='neu';render();toast('Bitte API-Key eingeben','err');return;}
       const kats=S.profile?.kategorien||DEFAULT_KATS;
       res={datum:new Date().toISOString().split('T')[0],betrag:0,art:'ausgabe',lieferant:file.name.replace(/\.[^.]+$/,''),kategorie:kats[kats.length-1].id,beschreibung:file.name};
     }
     const kats=S.profile?.kategorien||DEFAULT_KATS;
     const monat=res.datum?res.datum.substring(0,7):S.monat;
-    // Datei in Supabase Storage hochladen
-    let datei_url=null;
-    try{
-      const pfad=S.userId+'/'+Date.now()+'_'+file.name.replace(/[^a-zA-Z0-9._-]/g,'_');
-      const upR=await fetch(SB_URL+'/storage/v1/object/belege/'+pfad,{method:'POST',headers:{'apikey':SB_KEY,'Authorization':'Bearer '+S.token,'Content-Type':file.type||'application/octet-stream'},body:file});
-      if(upR.ok){datei_url=SB_URL+'/storage/v1/object/sign/belege/'+pfad;}
-    }catch(e){console.warn('Storage Upload fehlgeschlagen:',e);}
     await insertBeleg({datum:res.datum||new Date().toISOString().split('T')[0],betrag:res.betrag||0,art:res.art||'ausgabe',lieferant:res.lieferant||file.name,kategorie:res.kategorie||kats[0].id,beschreibung:res.beschreibung||file.name,monat,dateiname:file.name,datei_url});
     toast('Beleg erfasst ✓');
   }catch(e){toast('Fehler: '+e.message,'err');}
