@@ -219,7 +219,6 @@ function saveLocal(){
 }
 function loadLocal(){
   try{
-    // sessionStorage first (survives tab refresh), then localStorage
     S.token=sessionStorage.getItem('sb_token')||localStorage.getItem('sb_token');
     S.userId=sessionStorage.getItem('sb_uid')||localStorage.getItem('sb_uid');
     S.apiKey=localStorage.getItem('sb_apikey')||'';
@@ -307,7 +306,6 @@ async function doRegister(){
   if(!S.authName.trim()){S.authErr='Bitte Name eingeben';render();return;}
   try{
     await signUp(S.authEmail,S.authPass);
-    // Nach Registrierung sofort einloggen um gültigen Token zu bekommen
     const d=await signIn(S.authEmail,S.authPass);
     S.token=d.access_token;S.userId=d.user?.id;
     saveLocal();
@@ -424,7 +422,6 @@ function exportCSV(){
 async function boot(){
   loadLocal();
   if(S.userId){
-    // Refresh-Token versuchen wenn vorhanden
     if(!S.token||localStorage.getItem('sb_refresh')){
       try{await refreshToken();}catch(e){}
     }
@@ -531,6 +528,8 @@ function render(){
     const keySec=S.showKeyInput||!S.apiKey
       ?'<div class="card" style="margin-bottom:14px"><div class="section-title">🔑 Anthropic API-Key</div><p style="font-size:12px;color:var(--ink3);margin-bottom:10px;line-height:1.5">Für automatische Erkennung: Key von <strong>console.anthropic.com</strong></p><input class="inp" type="password" placeholder="sk-ant-…" id="aki" value="'+S.apiKey+'" style="margin-bottom:8px"/><button class="btn-primary" style="padding:10px" onclick="saveKey()">Key speichern</button></div>'
       :'<div class="key-section"><span style="font-size:12px;color:var(--accent);font-weight:500">🔑 API-Key hinterlegt</span><button onclick="S.showKeyInput=true;render()" style="background:none;border:none;font-size:11px;color:var(--ink3);cursor:pointer">ändern</button></div>';
+    // FIX: Kategorie vorauswählen wenn noch keine gewählt
+    if(!S.manuell.kategorie&&kats.length)S.manuell.kategorie=kats[0].id;
     const mO=kats.map(k=>'<option value="'+k.id+'"'+(S.manuell.kategorie===k.id?' selected':'')+'>'+k.icon+' '+k.label+'</option>').join('');
     inhalt=keySec
       +(S.loading?'<div class="analyzing"><div class="analyzing-dot"></div><span style="font-size:13px;color:var(--accent);font-weight:500">Beleg wird analysiert…</span></div>':'')
@@ -567,7 +566,6 @@ function addKat(){
   render();
 }
 function removeKat(i){
-  // collect current values first
   S.draft.kategorien.forEach((_,idx)=>{
     const e=document.getElementById('ke'+idx);
     const n=document.getElementById('kn'+idx);
@@ -578,7 +576,6 @@ function removeKat(i){
   render();
 }
 async function collectAndSave(){
-  // collect all field values before saving
   const name=document.getElementById('sname')?.value?.trim();
   const emoji=document.getElementById('semoji')?.value||'💼';
   const pin=document.getElementById('spin')?.value;
@@ -595,7 +592,6 @@ async function collectAndSave(){
 }
 
 async function doManuell(){
-  // Felder direkt aus dem DOM lesen (sicherer auf Mobile)
   const datumEl=document.querySelector('#manuell-datum');
   const lieferantEl=document.querySelector('#manuell-lieferant');
   const beschEl=document.querySelector('#manuell-beschreibung');
@@ -610,6 +606,10 @@ async function doManuell(){
   if(katEl)S.manuell.kategorie=katEl.value;
   if(!S.manuell.betrag||!S.manuell.beschreibung){toast('Betrag und Beschreibung sind Pflichtfelder','err');return;}
   const kats=S.profile?.kategorien||DEFAULT_KATS;
+  // FIX: Sicherstellen dass immer eine gültige Kategorie vorhanden ist
+  if(!S.manuell.kategorie||!kats.find(k=>k.id===S.manuell.kategorie)){
+    S.manuell.kategorie=kats[0].id;
+  }
   const monat=S.manuell.datum?S.manuell.datum.substring(0,7):S.monat;
   try{
     await insertBeleg({datum:S.manuell.datum||new Date().toISOString().split('T')[0],betrag:parseFloat(String(S.manuell.betrag).replace(',','.')),art:S.manuell.art||'ausgabe',lieferant:S.manuell.lieferant||'',kategorie:S.manuell.kategorie||kats[0].id,beschreibung:S.manuell.beschreibung,monat});
