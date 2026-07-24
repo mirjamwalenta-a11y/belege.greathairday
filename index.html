@@ -409,31 +409,34 @@ async function extractPdfText(file){
 function analyzeLokal(text,filename){
   const kats=S.profile?.kategorien||DEFAULT_KATS;
   let betrag=0;
-  function parseVal(s){return parseFloat(s.replace(/\./g,'').replace(',','.'));}
-  function allM(re,txt){const g=new RegExp(re.source,'ig');return[...txt.matchAll(g)];}
-  // Stufe 1: starke Endbetrag-Keywords → letzten Treffer (steht am Ende der Rechnung)
-  const endM=allM(/(?:rechnungsendbetrag|gesamtbetrag\s+inkl|gesamt\s*inkl|zu\s+zahlen(?:der\s+betrag)?|zahlbetrag|endbetrag|total\s+inkl|inkl\.?\s*(?:mwst|ust|mws))[^\d]{0,30}(\d{1,3}(?:\.\d{3})*,\d{2}|\d{1,6},\d{2})/,text);
+  // Normalisiert: Tausendertrennzeichen (Punkt oder Leerzeichen) entfernen, Komma->Punkt
+  function parseVal(s){return parseFloat(s.replace(/[\s.]/g,'').replace(',','.'));}
+  function allM(re,txt){return[...txt.matchAll(new RegExp(re,'ig'))];}
+  const NR='\\d{1,3}(?:[.\\s]\\d{3})*,\\d{2}|\\d{1,6},\\d{2}';
+  // Stufe 1: starke Endbetrag-Keywords -> letzten Treffer
+  const endM=allM('(?:rechnungsendbetrag|gesamtbetrag\\s+inkl|gesamt\\s*inkl|zu\\s+zahlen(?:der\\s+betrag)?|zahlbetrag|endbetrag|total\\s+inkl|inkl\\.?\\s*(?:mwst|ust|mws))[^\\d]{0,30}('+NR+')',text);
   if(endM.length){const v=parseVal(endM[endM.length-1][1]);if(v>0&&v<1000000)betrag=v;}
-  // Stufe 2: Brutto/Gesamt-Keywords → letzten Treffer
+  // Stufe 2: Brutto/Gesamt-Keywords -> letzten Treffer
   if(!betrag){
-    const bM=allM(/(?:gesamtbetrag|bruttobetrag|rechnungsbetrag|summe\s+brutto|betrag\s+inkl)[^\d]{0,30}(\d{1,3}(?:\.\d{3})*,\d{2}|\d{1,6},\d{2})/,text);
+    const bM=allM('(?:gesamtbetrag|bruttobetrag|rechnungsbetrag|summe\\s+brutto|betrag\\s+inkl)[^\\d]{0,30}('+NR+')',text);
     if(bM.length){const v=parseVal(bM[bM.length-1][1]);if(v>0&&v<1000000)betrag=v;}
   }
-  // Stufe 3: allgemeine Keyword-Zeile → größten Wert
+  // Stufe 3: allgemeine Keyword-Zeile -> groessten Wert
   if(!betrag){
-    const aM=allM(/(?:gesamt|total|summe|betrag|brutto|endbetrag)[^\d]{0,20}(\d{1,3}(?:\.\d{3})*,\d{2}|\d{1,6},\d{2})/,text);
+    const aM=allM('(?:gesamt|total|summe|betrag|brutto|endbetrag)[^\\d]{0,20}('+NR+')',text);
     const vs=aM.map(m=>parseVal(m[1])).filter(v=>v>0&&v<1000000);
     if(vs.length)betrag=Math.max(...vs);
   }
-  // Stufe 4: Zahl mit EUR/€ → größten Wert
+  // Stufe 4: Zahl mit EUR/Euro (beide Reihenfolgen) -> groessten Wert
   if(!betrag){
-    const eM=allM(/(\d{1,3}(?:\.\d{3})*,\d{2}|\d{1,6},\d{2})\s*(?:EUR|€)/,text);
-    const vs=eM.map(m=>parseVal(m[1])).filter(v=>v>0&&v<1000000);
+    const eM1=allM('('+NR+')\\s*(?:EUR|€)',text);
+    const eM2=allM('(?:EUR|€)\\s*('+NR+')',text);
+    const vs=[...eM1,...eM2].map(m=>parseVal(m[1])).filter(v=>v>0&&v<1000000);
     if(vs.length)betrag=Math.max(...vs);
   }
-  // Stufe 5: Fallback → größte Kommazahl im Text
+  // Stufe 5: Fallback -> groesste Kommazahl im Text
   if(!betrag){
-    const vs=[...text.matchAll(/(\d{1,3}(?:\.\d{3})*,\d{2})/g)].map(m=>parseVal(m[1])).filter(v=>v>0&&v<1000000);
+    const vs=[...text.matchAll(new RegExp(NR,'g'))].map(m=>parseVal(m[0])).filter(v=>v>0&&v<1000000);
     if(vs.length)betrag=Math.max(...vs);
   }
   let datum=new Date().toISOString().split('T')[0];
