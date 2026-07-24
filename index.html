@@ -114,6 +114,7 @@
     @keyframes pulse{to{opacity:0.3}}
     .key-section{background:#F0EAF4;border-radius:9px;padding:9px 12px;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between}
   </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 </head>
 <body>
 <div id="app" style="display:flex;align-items:center;justify-content:center;height:100dvh;flex-direction:column;gap:12px">
@@ -380,6 +381,56 @@ async function saveSetup(){
   await loadBelege();render();toast('Einrichtung gespeichert ✓');
 }
 
+// ── PDF Text Extraktion ────────────────────────────────────────────────────────
+async function extractPdfText(file){
+  try{
+    if(typeof pdfjsLib==='undefined')return null;
+    pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    const ab=await file.arrayBuffer();
+    const pdf=await pdfjsLib.getDocument({data:ab}).promise;
+    let fullText='';
+    for(let i=1;i<=Math.min(pdf.numPages,3);i++){
+      const page=await pdf.getPage(i);
+      const tc=await page.getTextContent();
+      fullText+=tc.items.map(it=>it.str).join(' ')+'\n';
+    }
+    return fullText;
+  }catch(e){console.warn('PDF.js Fehler:',e);return null;}
+}
+// ── Lokale Analyse (ohne API-Key) ──────────────────────────────────────────────
+function analyzeLokal(text,filename){
+  const kats=S.profile?.kategorien||DEFAULT_KATS;
+  let betrag=0;
+  const betragPatterns=[
+    /(?:gesamt|total|summe|betrag|brutto|endbetrag|rechnungsbetrag)[^\d]*(\d{1,6}[.,]\d{2})/i,
+    /(\d{1,3}(?:\.\d{3})*,\d{2})\s*(?:€|EUR)/i,
+    /(?:€|EUR)\s*(\d{1,3}(?:\.\d{3})*,\d{2})/i,
+    /(\d{1,6},\d{2})\s*(?:€|EUR)/i,
+    /(?:€|EUR)\s*(\d{1,6}[.,]\d{2})/i,
+    /(\d{1,3}(?:\.\d{3})*,\d{2})/,
+  ];
+  for(const p of betragPatterns){
+    const m=text.match(p);
+    if(m){const raw=m[1].replace(/\./g,'').replace(',','.');const val=parseFloat(raw);if(val>0&&val<1000000){betrag=val;break;}}
+  }
+  let datum=new Date().toISOString().split('T')[0];
+  const datumM=text.match(/(\d{1,2})[.\-\/](\d{1,2})[.\-\/](\d{4})/);
+  if(datumM){const[,d,mo,y]=datumM;datum=y+'-'+mo.padStart(2,'0')+'-'+d.padStart(2,'0');}
+  const zeilen=text.split(/\n/).map(z=>z.trim()).filter(z=>z.length>2&&z.length<60&&!/^\d/.test(z));
+  const lieferant=zeilen[0]||filename.replace(/\.[^.]+$/,'');
+  const tl=text.toLowerCase();
+  let kategorie=kats[kats.length-1].id;
+  const katMap=[
+    {k:'strom|energie|gas|wasser|heizung',id:'betriebskosten'},
+    {k:'loreal|schwarzkopf|wella|einkauf|material|bestellung|farb|produkt',id:'einkauf'},
+    {k:'miete|miet|pacht',id:'betriebskosten'},
+    {k:'steuer|finanzamt|sv|sozialversicherung',id:'sonstiges'},
+    {k:'gehalt|lohn|personal',id:'personal'},
+    {k:'telefon|internet|it|software',id:'sonstiges'},
+  ];
+  for(const {k,id} of katMap){if(new RegExp(k).test(tl)){const found=kats.find(x=>x.id===id);if(found){kategorie=found.id;break;}}}
+  return{datum,betrag,art:'ausgabe',lieferant:lieferant.substring(0,60),kategorie,beschreibung:filename.replace(/\.[^.]+$/,'').substring(0,60)};
+}
 // ── Claude ────────────────────────────────────────────────────────────────────
 async function analyzeClaude(text,filename){
   if(!S.apiKey)throw new Error('kein_key');
@@ -394,7 +445,10 @@ async function verarbeiteFile(file){
   try{
     let text=file.name;
     if(file.type==='text/plain')text=await file.text();
-    else if(file.type==='application/pdf')text='PDF: '+file.name;
+    else if(file.type==='application/pdf'){
+      const pdfText=await extractPdfText(file);
+      text=pdfText||('PDF: '+file.name);
+    }
     else if(file.type.startsWith('image/'))text='Bild: '+file.name;
     // Storage Upload immer zuerst, unabhängig vom API-Key
     let datei_url=null;
@@ -406,8 +460,8 @@ async function verarbeiteFile(file){
     let res;
     try{res=await analyzeClaude(text,file.name);}
     catch(e){
-      const kats=S.profile?.kategorien||DEFAULT_KATS;
-      res={datum:new Date().toISOString().split('T')[0],betrag:0,art:'ausgabe',lieferant:file.name.replace(/\.[^.]+$/,''),kategorie:kats[kats.length-1].id,beschreibung:file.name};
+      // Kein API-Key oder Fehler → lokale Analyse aus PDF-Text
+      res=analyzeLokal(text,file.name);
     }
     const kats=S.profile?.kategorien||DEFAULT_KATS;
     const monat=res.datum?res.datum.substring(0,7):S.monat;
