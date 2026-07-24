@@ -104,10 +104,10 @@
     .edit-actions{display:flex;gap:8px;margin-top:4px}
     .btn-save{flex:1;background:var(--accent);color:#fff;border:none;border-radius:8px;padding:10px;font-size:13px;font-weight:600;font-family:inherit;cursor:pointer}
     .btn-cancel{flex:1;background:#F0EAF4;color:var(--ink2);border:none;border-radius:8px;padding:10px;font-size:13px;font-family:inherit;cursor:pointer}
-    .pruef-overlay{position:fixed;inset:0;background:rgba(44,36,56,0.55);z-index:2000;display:flex;align-items:flex-end;justify-content:center}
-    .pruef-sheet{background:var(--surface);border-radius:18px 18px 0 0;padding:20px 18px 32px;width:100%;max-width:480px;box-shadow:0 -4px 32px rgba(44,36,56,0.18);max-height:92vh;overflow-y:auto}
+    .pruef-overlay{position:fixed;inset:0;background:rgba(44,36,56,0.55);z-index:2000;display:flex;align-items:flex-end;justify-content:center;pointer-events:auto}
+    .pruef-sheet{background:var(--surface);border-radius:18px 18px 0 0;padding:20px 18px 32px;width:100%;max-width:480px;box-shadow:0 -4px 32px rgba(44,36,56,0.18);height:90vh;overflow-y:scroll;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
     .pruef-doc{width:100%;height:52vw;max-height:260px;border-radius:10px;border:1.5px solid #E5DFF0;background:#f7f5fa;margin-bottom:14px;object-fit:contain}
-    .pruef-doc-pdf{width:100%;max-height:210px;overflow:hidden;border-radius:10px;border:1.5px solid #E5DFF0;display:block;margin-bottom:14px}
+    .pruef-doc-pdf{width:100%;max-height:240px;overflow-y:auto;-webkit-overflow-scrolling:touch;border-radius:10px;border:1.5px solid #E5DFF0;display:block;margin-bottom:14px}
     .pruef-title{font-size:15px;font-weight:700;color:var(--accent);margin-bottom:4px}
     .pruef-hint{font-size:11px;color:var(--ink3);margin-bottom:14px;line-height:1.5}
     .pruef-label{font-size:11px;font-weight:600;color:var(--ink2);margin-bottom:3px;margin-top:10px;display:block}
@@ -648,13 +648,15 @@ async function pruefDrawPage(){
   const page=await _pruefPdf.getPage(_pruefPage);
   const wrap=document.getElementById('pruef-pdf-wrap');
   const w=wrap?wrap.clientWidth:300;
+  const dpr=window.devicePixelRatio||1;
   const vpFull=page.getViewport({scale:1});
-  const scaleW=w/vpFull.width;
-  const scaleH=200/vpFull.height;
-  const scale=Math.min(scaleW,scaleH,1.0);
+  // Rendere auf volle Breite des Containers, scharf (dpr-skaliert)
+  const scale=(w/vpFull.width)*dpr;
   const vp=page.getViewport({scale});
+  // Canvas native Größe = scharf
   canvas.width=vp.width;canvas.height=vp.height;
-  canvas.style.width='100%';canvas.style.height='auto';
+  // CSS-Darstellung = Containerbreite, Höhe proportional
+  canvas.style.width=w+'px';canvas.style.height=(vp.height/dpr)+'px';
   await page.render({canvasContext:canvas.getContext('2d'),viewport:vp}).promise;
   const info=document.getElementById('pruef-pdf-info');
   if(info)info.textContent=_pruefPage+' / '+_pruefPdf.numPages;
