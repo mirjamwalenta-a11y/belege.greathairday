@@ -521,6 +521,7 @@ async function verarbeiteFile(file){
         beschreibung:res.beschreibung||file.name
       },
       dateiname:file.name,
+      pdfText:text,
       fileType:file.type,
       localUrl:URL.createObjectURL(file),
       datei_url
@@ -588,6 +589,35 @@ async function boot(){
 }
 
 // ── Render ────────────────────────────────────────────────────────────────────
+
+// ── Warn-Logik ────────────────────────────────────────────────────────────────
+function pruefNichtRechnung(text,filename){
+  const tl=(text+' '+filename).toLowerCase();
+  const signale=[
+    'zahlungsavis','avis','mahnung','mahnschreiben','zahlungserinnerung',
+    'lieferschein','lieferung','bestellbestaetigung','bestellbestätigung',
+    'auftragsbestaetigung','auftragsbestätigung','proforma','angebot',
+    'kostenvoranschlag','gutschrift ohne steuer','versandbestaetigung',
+    'versandbestätigung','packing list','delivery note'
+  ];
+  return signale.some(s=>tl.includes(s));
+}
+function pruefDublette(lieferant,datum,betrag,dateiname){
+  const belege=S.belege||[];
+  const b=parseFloat(betrag)||0;
+  const lio=(lieferant||'').toLowerCase().substring(0,20);
+  return belege.find(x=>{
+    const xl=(x.lieferant||'').toLowerCase().substring(0,20);
+    const xb=parseFloat(x.betrag)||0;
+    const datumMatch=x.datum===datum;
+    const betragMatch=b>0&&xb>0&&Math.abs(b-xb)<0.02;
+    const liefMatch=lio.length>3&&xl.includes(lio.substring(0,10));
+    const dateiMatch=dateiname&&x.beschreibung&&(
+      x.beschreibung.toLowerCase().includes(dateiname.toLowerCase().replace(/\.[^.]+$/,'').substring(0,15))
+    );
+    return (datumMatch&&betragMatch&&liefMatch)||(dateiMatch&&betragMatch);
+  });
+}
 function renderPruefModal(){
   const existing=document.getElementById('pruef-overlay');
   if(existing)existing.remove();
@@ -605,6 +635,8 @@ function renderPruefModal(){
     +'<div class="pruef-title">&#x1F4CB; Beleg pr\u00FCfen</div>'
     +docHtml
     +'<div class="pruef-hint">Erkannte Werte pr\u00FCfen und bei Bedarf korrigieren.</div>'
+    +(pruefNichtRechnung(p.pdfText||'',p.dateiname||'')?'<div style="background:#FFF3CD;color:#856404;border-radius:8px;padding:10px 12px;font-size:12px;margin-bottom:10px;border:1px solid #F0C040"><strong>&#9888;&#65039; Kein buchungsrelevanter Beleg?</strong><br>Dieses Dokument wirkt m\u00F6glicherweise wie ein Lieferschein, Avis, Mahnung oder Bestellbest\u00E4tigung. Bitte vor dem Speichern pr\u00FCfen.</div>':'')
+    +(pruefDublette(p.res.lieferant,p.res.datum,p.res.betrag,p.dateiname)?'<div style="background:#FEE2E2;color:#991B1B;border-radius:8px;padding:10px 12px;font-size:12px;margin-bottom:10px;border:1px solid #FCA5A5"><strong>&#9888;&#65039; M\u00F6gliche Dublette</strong><br>Dieser Beleg k\u00F6nnte bereits erfasst worden sein. Bitte vor dem Speichern Lieferant, Datum, Betrag und Belegnummer pr\u00FCfen.</div>':'')
     +'<label class="pruef-label">&#x1F4C5; Datum</label>'
     +'<input class="inp" id="pruef-datum" type="date" value="'+p.res.datum+'"/>'
     +'<label class="pruef-label" style="display:flex;align-items:center;gap:6px">'
