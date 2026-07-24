@@ -421,10 +421,16 @@ function analyzeLokal(text,filename){
     const bM=allM('(?:gesamtbetrag|bruttobetrag|rechnungsbetrag|summe\\s+brutto|betrag\\s+inkl)[^\\d]{0,30}('+NR+')',text);
     if(bM.length){const v=parseVal(bM[bM.length-1][1]);if(v>0&&v<1000000)betrag=v;}
   }
-  // Stufe 3: allgemeine Keyword-Zeile -> groessten Wert
+  // Stufe 3: allgemeine Keyword-Zeile -> pro Zeile groessten Wert nehmen (erfasst Tabellenspalten)
   if(!betrag){
-    const aM=allM('(?:gesamt|total|summe|betrag|brutto|endbetrag)[^\\d]{0,20}('+NR+')',text);
-    const vs=aM.map(m=>parseVal(m[1])).filter(v=>v>0&&v<1000000);
+    const vs=[];
+    for(const zeile of text.split(/\n/)){
+      const aM=allM('(?:gesamt|total|summe|betrag|brutto|endbetrag)[^\\d]{0,20}('+NR+')',zeile);
+      if(!aM.length)continue;
+      // Alle Zahlen in dieser Zeile sammeln (Keyword-Treffer + weitere Spaltenbetraege)
+      const alleZahlen=[...zeile.matchAll(new RegExp(NR,'ig'))].map(m=>parseVal(m[0])).filter(v=>v>0&&v<1000000);
+      if(alleZahlen.length)vs.push(Math.max(...alleZahlen));
+    }
     if(vs.length)betrag=Math.max(...vs);
   }
   // Stufe 4: Zahl mit EUR/Euro (beide Reihenfolgen) -> groessten Wert
