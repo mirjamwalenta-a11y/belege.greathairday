@@ -492,14 +492,25 @@ async function verarbeiteFile(file){
   S.loading=false;render();
 }
 
+function updatePruefBtn(){
+  const cb=document.getElementById('pruef-bestaetigt');
+  const btn=document.getElementById('pruef-speichern-btn');
+  if(!cb||!btn)return;
+  const ok=cb.checked;
+  btn.disabled=!ok;
+  btn.style.opacity=ok?'1':'0.4';
+  btn.style.cursor=ok?'pointer':'not-allowed';
+}
 async function doPruefSpeichern(){
   const p=S.pruef;
   if(!p)return;
+  // Bestätigung Pflicht
+  if(!document.getElementById('pruef-bestaetigt')?.checked){toast('Bitte zuerst den Betrag bestätigen','err');return;}
   // Werte aus den Eingabefeldern lesen
   const datum=document.getElementById('pruef-datum')?.value||p.res.datum;
   const betrag=parseFloat(String(document.getElementById('pruef-betrag')?.value||p.res.betrag).replace(',','.'));
   const lieferant=document.getElementById('pruef-lieferant')?.value||p.res.lieferant;
-  if(isNaN(betrag)){toast('Betrag ungültig','err');return;}
+  if(isNaN(betrag)||betrag<=0){toast('Betrag ungültig','err');return;}
   const kats=S.profile?.kategorien||DEFAULT_KATS;
   const monat=datum?datum.substring(0,7):S.monat;
   try{
@@ -559,13 +570,20 @@ function renderPruefModal(){
     +'<div class="pruef-hint">Erkannte Werte pr\u00FCfen und bei Bedarf korrigieren.</div>'
     +'<label class="pruef-label">&#x1F4C5; Datum</label>'
     +'<input class="inp" id="pruef-datum" type="date" value="'+p.res.datum+'"/>'
-    +'<label class="pruef-label">\u{1F4B6} Betrag (\u20AC)</label>'
-    +'<input class="inp" id="pruef-betrag" type="text" inputmode="decimal" value="'+(p.res.betrag||'')+'"/>'
+    +'<label class="pruef-label" style="display:flex;align-items:center;gap:6px">'
+    +'<span>\u{1F4B6} Gesamtbetrag inkl. MwSt. (\u20AC)</span>'
+    +'<span style="background:#FFF3CD;color:#856404;border-radius:5px;padding:1px 7px;font-size:10px;font-weight:700;letter-spacing:0.5px">VORSCHLAG \u2013 bitte pr\u00FCfen</span>'
+    +'</label>'
+    +'<input class="inp" id="pruef-betrag" type="text" inputmode="decimal" value="'+(p.res.betrag||'')+'" style="border:2px solid #E6A817;background:#FFFBF0;" oninput="document.getElementById(\'pruef-bestaetigt\').checked=false;updatePruefBtn()"/>'
+    +'<label style="display:flex;align-items:center;gap:8px;margin-top:8px;cursor:pointer;font-size:13px;color:var(--ink2)">'
+    +'<input type="checkbox" id="pruef-bestaetigt" onchange="updatePruefBtn()" style="width:18px;height:18px;accent-color:var(--accent);cursor:pointer"/>'
+    +'Ich habe den Gesamtbetrag inkl. MwSt. laut Rechnung gepr\u00FCft und best\u00E4tige diesen Wert.'
+    +'</label>'
     +'<label class="pruef-label">\u{1F3EA} Lieferant / Aussteller</label>'
     +'<input class="inp" id="pruef-lieferant" type="text" value="'+(p.res.lieferant||'')+'"/>'
     +'<div class="pruef-actions">'
     +'<button class="btn-cancel" style="flex:1" onclick="S.pruef=null;render()">Verwerfen</button>'
-    +'<button class="btn-save" style="flex:2" onclick="doPruefSpeichern()">✓ Gepr\u00FCft \u2013 Speichern</button>'
+    +'<button class="btn-save" id="pruef-speichern-btn" style="flex:2;opacity:0.4;cursor:not-allowed" disabled onclick="doPruefSpeichern()">\u2713 Gepr\u00FCft \u2013 Speichern</button>'
     +'</div>'
     +'</div>';
   document.body.appendChild(el);
