@@ -585,7 +585,7 @@ function renderPruefModal(){
   el.className='pruef-overlay';
   const docHtml=p.localUrl
     ?(p.fileType==='application/pdf'
-      ?'<iframe class="pruef-doc-pdf" src="'+p.localUrl+'" title="Rechnung"></iframe>'
+      ?'<div class="pruef-doc-pdf" id="pruef-pdf-wrap"><canvas id="pruef-pdf-canvas" style="width:100%;border-radius:8px;display:block"></canvas><div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px"><button onclick="pruefPdfPage(-1)" style="background:var(--accent);color:#fff;border:none;border-radius:8px;padding:4px 12px;font-size:13px;cursor:pointer">&#8249;</button><span id="pruef-pdf-info" style="font-size:12px;color:var(--ink3)"></span><button onclick="pruefPdfPage(1)" style="background:var(--accent);color:#fff;border:none;border-radius:8px;padding:4px 12px;font-size:13px;cursor:pointer">&#8250;</button></div></div>'
       :'<img class="pruef-doc" src="'+p.localUrl+'" alt="Rechnung"/>')
     :'';
   el.innerHTML='<div class="pruef-sheet">'
@@ -611,8 +611,41 @@ function renderPruefModal(){
     +'</div>'
     +'</div>';
   document.body.appendChild(el);
+  // PDF-Canvas starten falls PDF
+  if(p.localUrl && p.fileType==='application/pdf'){
+    setTimeout(()=>pruefRenderCanvas(p.localUrl),50);
+  }
 }
 
+// PDF-Canvas Viewer
+let _pruefPdf=null,_pruefPage=1;
+async function pruefRenderCanvas(url){
+  if(!window.pdfjsLib)return;
+  try{
+    const ab=await (await fetch(url)).arrayBuffer();
+    _pruefPdf=await pdfjsLib.getDocument({data:ab}).promise;
+    _pruefPage=1;
+    await pruefDrawPage();
+  }catch(e){console.warn('PDF canvas Fehler:',e);}
+}
+async function pruefDrawPage(){
+  if(!_pruefPdf)return;
+  const canvas=document.getElementById('pruef-pdf-canvas');
+  if(!canvas)return;
+  const page=await _pruefPdf.getPage(_pruefPage);
+  const vp=page.getViewport({scale:1.5});
+  canvas.width=vp.width;canvas.height=vp.height;
+  await page.render({canvasContext:canvas.getContext('2d'),viewport:vp}).promise;
+  const info=document.getElementById('pruef-pdf-info');
+  if(info)info.textContent=_pruefPage+' / '+_pruefPdf.numPages;
+}
+async function pruefPdfPage(dir){
+  if(!_pruefPdf)return;
+  const next=_pruefPage+dir;
+  if(next<1||next>_pruefPdf.numPages)return;
+  _pruefPage=next;
+  await pruefDrawPage();
+}
 function render(){
   const app=document.getElementById('app');
   renderPruefModal();
