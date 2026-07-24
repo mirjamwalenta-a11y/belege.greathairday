@@ -107,7 +107,7 @@
     .pruef-overlay{position:fixed;inset:0;background:rgba(44,36,56,0.55);z-index:2000;display:flex;align-items:flex-end;justify-content:center}
     .pruef-sheet{background:var(--surface);border-radius:18px 18px 0 0;padding:20px 18px 32px;width:100%;max-width:480px;box-shadow:0 -4px 32px rgba(44,36,56,0.18);max-height:92vh;overflow-y:auto}
     .pruef-doc{width:100%;height:52vw;max-height:260px;border-radius:10px;border:1.5px solid #E5DFF0;background:#f7f5fa;margin-bottom:14px;object-fit:contain}
-    .pruef-doc-pdf{width:100%;max-height:220px;overflow-y:auto;border-radius:10px;border:1.5px solid #E5DFF0;display:block;margin-bottom:14px}
+    .pruef-doc-pdf{width:100%;max-height:210px;overflow:hidden;border-radius:10px;border:1.5px solid #E5DFF0;display:block;margin-bottom:14px}
     .pruef-title{font-size:15px;font-weight:700;color:var(--accent);margin-bottom:4px}
     .pruef-hint{font-size:11px;color:var(--ink3);margin-bottom:14px;line-height:1.5}
     .pruef-label{font-size:11px;font-weight:600;color:var(--ink2);margin-bottom:3px;margin-top:10px;display:block}
@@ -440,7 +440,20 @@ function analyzeLokal(text,filename){
     const vs=[...eM1,...eM2].map(m=>parseVal(m[1])).filter(v=>v>0&&v<1000000);
     if(vs.length)betrag=Math.max(...vs);
   }
-  // Stufe 5: Fallback -> groesste Kommazahl im Text
+  // Stufe 5: Zahl mit € am Zeilenende -> groessten Wert (erfasst labellose Endbetraege)
+  if(!betrag){
+    const vs=[];
+    for(const zeile of text.split(/\n/)){
+      const m=zeile.match(new RegExp('('+NR+')\\s*€?\\s*$'));
+      if(m){const v=parseVal(m[1]);if(v>0&&v<1000000)vs.push(v);}
+    }
+    // Nimm groessten Wert nur wenn er deutlich groesser als andere ist (kein Versandkostenfehlmatch)
+    if(vs.length){
+      vs.sort((a,b)=>b-a);
+      betrag=vs[0];
+    }
+  }
+  // Stufe 6: absoluter Fallback -> groesste Kommazahl im Text
   if(!betrag){
     const vs=[...text.matchAll(new RegExp(NR,'g'))].map(m=>parseVal(m[0])).filter(v=>v>0&&v<1000000);
     if(vs.length)betrag=Math.max(...vs);
@@ -634,11 +647,14 @@ async function pruefDrawPage(){
   if(!canvas)return;
   const page=await _pruefPdf.getPage(_pruefPage);
   const wrap=document.getElementById('pruef-pdf-wrap');
-  const w=wrap?wrap.clientWidth:320;
+  const w=wrap?wrap.clientWidth:300;
   const vpFull=page.getViewport({scale:1});
-  const scale=Math.min(w/vpFull.width,1.2);
+  const scaleW=w/vpFull.width;
+  const scaleH=200/vpFull.height;
+  const scale=Math.min(scaleW,scaleH,1.0);
   const vp=page.getViewport({scale});
   canvas.width=vp.width;canvas.height=vp.height;
+  canvas.style.width='100%';canvas.style.height='auto';
   await page.render({canvasContext:canvas.getContext('2d'),viewport:vp}).promise;
   const info=document.getElementById('pruef-pdf-info');
   if(info)info.textContent=_pruefPage+' / '+_pruefPdf.numPages;
