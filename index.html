@@ -123,6 +123,7 @@
     .key-section{background:#F0EAF4;border-radius:9px;padding:9px 12px;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between}
   </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 </head>
 <body>
 <div id="app" style="display:flex;align-items:center;justify-content:center;height:100dvh;flex-direction:column;gap:12px">
@@ -485,6 +486,16 @@ async function analyzeClaude(text,filename){
   const data=await r.json();
   return JSON.parse(data.content?.map(i=>i.text||'').join('').trim().replace(/```json|```/g,'').trim());
 }
+// ── Tesseract OCR für Bilder ──────────────────────────────────────────────────
+async function ocrBild(file){
+  try{
+    if(typeof Tesseract==='undefined')return null;
+    const url=URL.createObjectURL(file);
+    const result=await Tesseract.recognize(url,'deu',{logger:()=>{}});
+    URL.revokeObjectURL(url);
+    return result?.data?.text||null;
+  }catch(e){console.warn('OCR Fehler:',e);return null;}
+}
 async function verarbeiteFile(file){
   S.loading=true;render();
   try{
@@ -494,7 +505,10 @@ async function verarbeiteFile(file){
       const pdfText=await extractPdfText(file);
       text=pdfText||('PDF: '+file.name);
     }
-    else if(file.type.startsWith('image/'))text='Bild: '+file.name;
+    else if(file.type.startsWith('image/')){
+      const ocrText=await ocrBild(file);
+      text=ocrText&&ocrText.trim().length>20?ocrText:('Bild: '+file.name);
+    }
     // Storage Upload immer zuerst, unabhängig vom API-Key
     let datei_url=null;
     try{
