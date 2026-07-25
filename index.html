@@ -133,6 +133,7 @@
 <script>
 // ── Config ────────────────────────────────────────────────────────────────────
 const SB_URL = 'https://lpuxvvfrrcnbuzafscyk.supabase.co';
+const INVITE_CODE = 'GREATHAIR2026'; // <-- hier Code ändern um Zugang zu sperren
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxwdXh2dmZycmNuYnV6YWZzY3lrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ2ODIxNDcsImV4cCI6MjEwMDI1ODE0N30.6VZUmmXj_x3Q8J55s_tbOHcW5-U5OXllGoEBhypaVfI';
 const MONATE=['Jänner','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
 const DEFAULT_KATS=[
@@ -315,6 +316,7 @@ async function doLogin(){
 async function doRegister(){
   S.authErr='';render();
   if(!S.authName.trim()){S.authErr='Bitte Name eingeben';render();return;}
+  if((S.authCode||'').trim().toUpperCase()!==INVITE_CODE){S.authErr='Einladungs-Code falsch oder fehlt';render();return;}
   try{
     await signUp(S.authEmail,S.authPass);
     // Nach Registrierung sofort einloggen um gültigen Token zu bekommen
@@ -750,6 +752,7 @@ function render(){
       +(!isL?'<input class="auth-inp" placeholder="Name deines Betriebs" value="'+S.authName+'" oninput="S.authName=this.value"/>':'')
       +'<input class="auth-inp" type="email" placeholder="E-Mail" value="'+S.authEmail+'" oninput="S.authEmail=this.value"/>'
       +'<input class="auth-inp" type="password" placeholder="Passwort (min. 6 Zeichen)" value="'+S.authPass+'" oninput="S.authPass=this.value" onkeydown="if(event.key===\'Enter\')'+(isL?'doLogin()':'doRegister()')+'"/>'
+      +(!isL?'<input class="auth-inp" placeholder="Einladungs-Code" value="'+(S.authCode||'')+'" oninput="S.authCode=this.value.toUpperCase()" style="letter-spacing:2px;text-transform:uppercase" onkeydown="if(event.key===\'Enter\')doRegister()"/>':'')
       +'<div class="auth-error">'+S.authErr+'</div>'
       +'<button class="auth-btn" onclick="'+(isL?'doLogin()':'doRegister()')+'">'+( isL?'Einloggen':'Registrieren')+'</button>'
       +'</div>'
