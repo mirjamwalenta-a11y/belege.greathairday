@@ -702,6 +702,7 @@ async function verarbeiteFile(file){
       },
       dateiname:file.name,
       pdfText:text,
+      ocrRaw:text,
       fileType:file.type,
       localUrl:URL.createObjectURL(file),
       datei_url
@@ -836,6 +837,7 @@ function renderPruefModal(){
     +'<div class="pruef-title">&#x1F4CB; Beleg pr\u00FCfen</div>'
     +docHtml
     +'<div class="pruef-hint">Erkannte Werte pr\u00FCfen und bei Bedarf korrigieren.</div>'
+    +(S.pruef?.ocrRaw?'<details style="margin-bottom:12px"><summary style="font-size:11px;color:var(--ink3);cursor:pointer;user-select:none">🔍 OCR-Rohtext anzeigen (für Debugging)</summary><pre style="font-size:10px;color:var(--ink2);background:#f5f5f5;border-radius:8px;padding:10px;margin-top:6px;overflow-x:auto;white-space:pre-wrap;max-height:200px;overflow-y:auto">'+((S.pruef?.ocrRaw||'').substring(0,1500).replace(/</g,'&lt;'))+'</pre></details>':'')
     +(pruefNichtRechnung(p.pdfText||'',p.dateiname||'')?'<div style="background:#FFF3CD;color:#856404;border-radius:8px;padding:10px 12px;font-size:12px;margin-bottom:10px;border:1px solid #F0C040"><strong>&#9888;&#65039; Kein buchungsrelevanter Beleg?</strong><br>Dieses Dokument wirkt m\u00F6glicherweise wie ein Lieferschein, Avis, Mahnung oder Bestellbest\u00E4tigung. Bitte vor dem Speichern pr\u00FCfen.</div>':'')
     +(pruefDublette(p.res.lieferant,p.res.datum,p.res.betrag,p.dateiname)?'<div style="background:#FEE2E2;color:#991B1B;border-radius:8px;padding:10px 12px;font-size:12px;margin-bottom:10px;border:1px solid #FCA5A5"><strong>&#9888;&#65039; M\u00F6gliche Dublette</strong><br>Dieser Beleg k\u00F6nnte bereits erfasst worden sein. Bitte vor dem Speichern Lieferant, Datum, Betrag und Belegnummer pr\u00FCfen.</div>':'')
     +'<label class="pruef-label">&#x1F4C5; Datum</label>'
