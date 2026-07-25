@@ -682,11 +682,26 @@ async function verarbeiteFile(file){
       const upR=await fetch(SB_URL+'/storage/v1/object/belege/'+pfad,{method:'POST',headers:{'apikey':SB_KEY,'Authorization':'Bearer '+S.token,'Content-Type':file.type||'application/octet-stream'},body:file});
       if(upR.ok){datei_url=SB_URL+'/storage/v1/object/belege/'+pfad;}
     }catch(e){console.warn('Storage Upload fehlgeschlagen:',e);}
+    // QR-Code-Zeilen entfernen: österr. Registrierkassen-QR enthält "_R1-AT0_" etc.
+    // Diese Zeilen verwirren die Betragserkennung (enthalten Zahlen wie 14,97)
+    function bereinigeFuerAnalyse(t){
+      return t.split(/\n/).filter(z=>{
+        const s=z.trim();
+        // Zeilen mit typischen QR/Barcode-Mustern überspringen
+        if(/^_R[0-9]-/.test(s))return false;           // "_R1-AT0_..."
+        if(/AT0_\d+\/\d+/.test(s))return false;        // "AT0_633/006_003-..."
+        if(/T\d{2}:\d{2}:\d{2}MSR/.test(s))return false; // Timestamp+MSR
+        if(/[A-Za-z0-9+\/]{30,}={0,2}$/.test(s)&&!/[äöüÄÖÜ\s,]/.test(s))return false; // Base64
+        if((s.match(/[A-Z0-9]/g)||[]).length>s.length*0.7&&s.length>20&&!/[äöü,\s]/.test(s))return false; // zu viele Großbuchstaben/Zahlen ohne Leerzeichen
+        return true;
+      }).join('\n');
+    }
+    const textBereinigt=bereinigeFuerAnalyse(text);
     let res;
-    try{res=await analyzeClaude(text,file.name);}
+    try{res=await analyzeClaude(textBereinigt,file.name);}
     catch(e){
       // Kein API-Key oder Fehler → lokale Analyse aus PDF-Text
-      res=analyzeLokal(text,file.name);
+      res=analyzeLokal(textBereinigt,file.name);
     }
     const kats=S.profile?.kategorien||DEFAULT_KATS;
     // Prüfansicht öffnen statt sofort speichern
