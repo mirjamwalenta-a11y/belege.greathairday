@@ -412,6 +412,11 @@ async function extractPdfText(file){
 function analyzeLokal(text,filename){
   const kats=S.profile?.kategorien||DEFAULT_KATS;
   let betrag=0;
+  // OCR-Normalisierung: häufige Erkennungsfehler korrigieren
+  // Semikolon zwischen Ziffern → Komma (z.B. "15; 22" → "15,22")
+  text=text.replace(/(\d)\s*;\s*(\d{2})\b/g,'$1,$2');
+  // Leerzeichen zwischen Ziffern vor 2-Stellen → Komma ("15 22" → nur wenn plausibel)
+  // Punkt als Tausendertrenner vor Kommazahl schützen
   function parseVal(s){return parseFloat(s.replace(/[\s.]/g,'').replace(',','.'));}
   function allM(re,txt){return[...txt.matchAll(new RegExp(re,'ig'))];}
   const NR='\\d{1,3}(?:[.\\s]\\d{3})*,\\d{2}|\\d{1,6},\\d{2}';
@@ -438,7 +443,7 @@ function analyzeLokal(text,filename){
 
   // P2: Starke Endbetrag-Keywords (nach Rabatten)
   if(!betrag){
-    const endM=allM('(?:rechnungsendbetrag|gesamtbetrag\\s+inkl|gesamt\\s*inkl|zu\\s+zahlen(?:der\\s+betrag)?|zahlbetrag|endbetrag|total\\s+inkl|betrag\\s+in\\s+eur\\s+inkl|summe\\s+inkl|bar\\s*bezahlt|bezahlt|summe)[^\\d]{0,30}('+NR+')',text);
+    const endM=allM('(?:rechnungsendbetrag|gesamtbetrag\\s+inkl|gesamt\\s*inkl|zu\\s+zahlen(?:der\\s+betrag)?|zahlbetrag|endbetrag|total\\s+inkl|betrag\\s+in\\s+eur\\s+inkl|summe\\s+inkl|bar\\s*bezahlt|bezahlt|bar\\s+eur|summe)[^\\d]{0,30}('+NR+')',text);
     if(endM.length){const v=parseVal(endM[endM.length-1][1]);if(v>0&&v<1000000)betrag=v;}
   }
 
