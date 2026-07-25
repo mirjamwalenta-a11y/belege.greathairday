@@ -574,13 +574,34 @@ async function doPruefSpeichern(){
   render();
 }
 
+// Markdown-Reste aus einem Feldwert entfernen
+function csvClean(s){
+  return String(s||'')
+    .replace(/[*_~`#>]+/g,'')   // Markdown-Zeichen
+    .replace(/\[([^\]]+)\]\([^)]+\)/g,'$1') // Links [text](url) -> text
+    .replace(/\s+/g,' ')
+    .trim();
+}
 function exportCSV(){
   const liste=S.belege.filter(b=>b.monat===S.monat);
   if(!liste.length){toast('Keine Belege','err');return;}
-  const kopf='Datum;Lieferant;Beschreibung;Kategorie;Art;Betrag\n';
-  const z=liste.map(b=>b.datum+';'+(b.lieferant||'')+';'+(b.beschreibung||'')+';'+(kk(b.kategorie)?.label||'')+';'+(b.art==='ausgabe'?'Ausgabe':'Einnahme')+';'+(b.betrag||0).toFixed(2)).join('\n');
-  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['\uFEFF'+kopf+z],{type:'text/csv;charset=utf-8;'}));
-  a.download='Belege_'+mL(S.monat).replace(' ','_')+'.csv';a.click();toast('CSV exportiert ✓');
+  const kopf='Datum;Lieferant;Beschreibung;Kategorie;Art;Betrag (EUR)\n';
+  const z=liste.map(b=>[
+    b.datum||'',
+    csvClean(b.lieferant),
+    csvClean(b.beschreibung),
+    csvClean(kk(b.kategorie)?.label||''),
+    b.art==='ausgabe'?'Ausgabe':'Einnahme',
+    (b.betrag||0).toFixed(2).replace('.',',') // Komma fuer oesterr. Excel/BMD
+  ].join(';')).join('\n');
+  // UTF-8 BOM damit BMD/Excel Umlaute korrekt liest
+  const bom='\uFEFF';
+  const blob=new Blob([bom+kopf+z],{type:'text/csv;charset=utf-8;'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='BMD_Belege_'+mL(S.monat).replace(' ','_')+'.csv';
+  a.click();
+  toast('BMD-CSV exportiert ✓');
 }
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
@@ -787,7 +808,7 @@ function render(){
       +'<div class="grid2"><div class="card" style="margin-bottom:0"><div class="stat-label">Ausgaben</div><div class="stat-value" style="color:var(--red)">'+eur(ausg)+'</div><div class="stat-sub">'+bfm.filter(b=>b.art==='ausgabe').length+' Belege</div></div><div class="card" style="margin-bottom:0"><div class="stat-label">Einnahmen</div><div class="stat-value" style="color:var(--green)">'+eur(einn)+'</div><div class="stat-sub">'+bfm.filter(b=>b.art==='einnahme').length+' Belege</div></div></div>'
       +(katS.length?'<div class="card"><div class="section-title">Ausgaben nach Kategorie</div>'+bars+'</div>':'')
       +(bfm.length===0?'<div class="empty"><div class="empty-icon">📂</div><div style="font-size:14px">Noch keine Belege für<br><strong>'+mL(S.monat)+'</strong>.</div><button class="btn-primary" style="margin-top:16px;width:auto;padding:10px 24px" onclick="S.ansicht=\'neu\';render()">Ersten Beleg erfassen</button></div>':'')
-      +(bfm.length?'<button class="btn-primary" onclick="exportCSV()">📤 Exportieren für Steuerberater</button>':'');
+      +(bfm.length?'<button class="btn-primary" onclick="exportCSV()">📤 Als BMD-CSV herunterladen</button>':'');
   }
 
   else if(ansicht==='belege'){
@@ -799,7 +820,7 @@ function render(){
       }
       return'<div class="beleg-item"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px"><div style="flex:1;min-width:0"><div><span class="beleg-tag" style="background:#7C6B8A1A;color:#7C6B8A">'+(k?.icon||'📦')+' '+(k?.label||'')+'</span><span style="font-size:10px;color:var(--ink3);margin-left:4px">'+b.datum+'</span></div><div class="beleg-name">'+(b.lieferant||'—')+'</div><div class="beleg-desc">'+(b.beschreibung||'')+'</div></div><div class="beleg-amount" style="color:'+(b.art==='ausgabe'?'var(--red)':'var(--green)')+'">'+(b.art==='ausgabe'?'−':'+')+eur(b.betrag||0)+'</div></div><div class="beleg-actions"><button class="btn-sm btn-edit" onclick="S.editId=\''+b.id+'\';S.editData=Object.assign({},S.belege.find(x=>x.id===\''+b.id+'\'));render()">✏️ Bearbeiten</button><button class="btn-sm btn-del" onclick="if(confirm(\'Löschen?\'))deleteBelegDB(\''+b.id+'\').then(()=>render())">🗑️ Löschen</button></div></div>';
     }).join('');
-    inhalt='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-size:13px;color:var(--ink3)">'+bfm.length+' Belege · '+mL(S.monat)+'</div>'+(bfm.length?'<button class="btn-outline" onclick="exportCSV()">Exportieren</button>':'')+'</div>'+(bfm.length===0?'<div class="empty"><div class="empty-icon">🗂️</div><div style="font-size:14px">Keine Belege in diesem Monat.</div></div>':items);
+    inhalt='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-size:13px;color:var(--ink3)">'+bfm.length+' Belege · '+mL(S.monat)+'</div>'+(bfm.length?'<button class="btn-outline" onclick="exportCSV()">📤 BMD-CSV</button>':'')+'</div>'+(bfm.length===0?'<div class="empty"><div class="empty-icon">🗂️</div><div style="font-size:14px">Keine Belege in diesem Monat.</div></div>':items);
   }
 
   else if(ansicht==='neu'){
