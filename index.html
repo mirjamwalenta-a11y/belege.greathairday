@@ -573,13 +573,30 @@ function rotateBildCanvas(img,deg){
 function loadImg(url){
   return new Promise((res,rej)=>{const i=new Image();i.onload=()=>res(i);i.onerror=rej;i.src=url;});
 }
+function vorverarbeiteCanvas(src){
+  const c=document.createElement('canvas');
+  c.width=src.width||src.naturalWidth;
+  c.height=src.height||src.naturalHeight;
+  const ctx=c.getContext('2d');
+  ctx.filter='grayscale(1) contrast(1.6) brightness(1.1)';
+  ctx.drawImage(src,0,0,c.width,c.height);
+  return c;
+}
 async function ocrCanvas(canvas){
   const result=await Tesseract.recognize(canvas,'deu',{logger:()=>{}});
   return result?.data?.text||null;
 }
-function hatInhalt(t){
-  if(!t||t.trim().length<30)return false;
-  return /\d,\d{2}|euro|eur|€|\d{1,2}[.\-\/]\d{1,2}|\bjuli\b|\bjuni\b|\bmai\b|\bsciss|\bendbetrag/i.test(t);
+function ocrScore(t){
+  if(!t||t.trim().length<20)return 0;
+  let s=0;
+  if(/\d,\d{2}/.test(t))s+=3;
+  if(/€|eur/i.test(t))s+=2;
+  if(/\d{1,2}[.\-\/]\d{1,2}[.\-\/]\d{2,4}/.test(t))s+=3;
+  if(/\b(januar|februar|märz|april|mai|juni|juli|august|september|oktober|november|dezember|jänner)\b/i.test(t))s+=4;
+  if(/\b(endbetrag|gesamtbetrag|summe|bezahlt|rechnung|quittung|hofer|spar|billa|scissors)\b/i.test(t))s+=4;
+  if(/\b(atu|uid|steuer|mwst)\b/i.test(t))s+=2;
+  s+=Math.min(t.trim().length/100,3);
+  return s;
 }
 async function ocrBild(file){
   try{
@@ -587,25 +604,28 @@ async function ocrBild(file){
     const url=URL.createObjectURL(file);
     const img=await loadImg(url);
     URL.revokeObjectURL(url);
-    // Original
-    const c0=document.createElement('canvas');
-    c0.width=img.width;c0.height=img.height;
-    c0.getContext('2d').drawImage(img,0,0);
-    const t0=await ocrCanvas(c0);
-    if(hatInhalt(t0))return t0;
-    // 90° (häufigster Fall bei Quittungen die quer fotografiert wurden)
-    const t90=await ocrCanvas(rotateBildCanvas(img,90));
-    if(hatInhalt(t90))return t90;
-    // 270°
-    const t270=await ocrCanvas(rotateBildCanvas(img,270));
-    if(hatInhalt(t270))return t270;
-    // 180°
-    const t180=await ocrCanvas(rotateBildCanvas(img,180));
-    if(hatInhalt(t180))return t180;
-    // Fallback: längstes Ergebnis
-    return [t0,t90,t270,t180].filter(Boolean).sort((a,b)=>b.length-a.length)[0]||null;
+    const basis=document.createElement('canvas');
+    basis.width=img.width;basis.height=img.height;
+    basis.getContext('2d').drawImage(img,0,0);
+    const varianten=[
+      vorverarbeiteCanvas(basis),
+      vorverarbeiteCanvas(rotateBildCanvas(img,90)),
+      vorverarbeiteCanvas(rotateBildCanvas(img,270)),
+      vorverarbeiteCanvas(rotateBildCanvas(img,180)),
+    ];
+    const texte=await Promise.all(varianten.map(c=>ocrCanvas(c).catch(()=>null)));
+    let besterText=null,besterScore=-1;
+    for(const t of texte){
+      const sc=ocrScore(t);
+      if(sc>besterScore){besterScore=sc;besterText=t;}
+    }
+    if(!besterText||besterScore===0){
+      besterText=texte.filter(Boolean).sort((a,b)=>b.length-a.length)[0]||null;
+    }
+    return besterText;
   }catch(e){console.warn('OCR Fehler:',e);return null;}
 }
+
 async function verarbeiteFile(file){
   S.loading=true;render();
   try{
