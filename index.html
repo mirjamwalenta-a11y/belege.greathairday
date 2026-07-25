@@ -419,8 +419,22 @@ function analyzeLokal(text,filename){
   // ── BETRAG: Strategie mit Prioritäten ─────────────────────────────────────
   // P1: Supermarkt-spezifisch: "HOFER PREIS", "SPAR PREIS", "REWE PREIS" etc.
   //     = tatsächlicher Kassenbetrag NACH allen Rabatten
-  const superPreisM=allM('(?:hofer|spar|billa|merkur|penny|lidl|aldi|rewe|eurospar|interspar)\\s+preis[^\\d]{0,15}('+NR+')',text);
-  if(superPreisM.length){const v=parseVal(superPreisM[superPreisM.length-1][1]);if(v>0&&v<1000000)betrag=v;}
+  // P1: Supermarkt "HOFER PREIS X,XX" - nimm den Wert direkt nach dem Keyword (ersten Treffer)
+  //     Wichtig: [^\d]{0,8} kurz halten damit nicht MwSt-Zeile weiter unten matcht
+  const superPreisM=allM('(?:hofer|spar|billa|merkur|penny|lidl|aldi|rewe|eurospar|interspar)\\s+preis\\s{0,8}('+NR+')',text);
+  if(superPreisM.length){const v=parseVal(superPreisM[0][1]);if(v>0&&v<1000000)betrag=v;}
+  // P1b: Auch "HOFER PREIS" gefolgt von Zeile mit EUR-Betrag
+  if(!betrag){
+    const lines=text.split(/\n/);
+    for(let i=0;i<lines.length-1;i++){
+      if(/(?:hofer|spar|billa|merkur|penny|lidl|aldi|rewe|eurospar|interspar)\s+preis/i.test(lines[i])){
+        // Betrag auf gleicher oder nächster Zeile suchen
+        const combined=(lines[i]+'\n'+(lines[i+1]||''));
+        const m=combined.match(new RegExp('(\\d{1,6},\\d{2})'));
+        if(m){const v=parseVal(m[1]);if(v>0&&v<1000000){betrag=v;break;}}
+      }
+    }
+  }
 
   // P2: Starke Endbetrag-Keywords (nach Rabatten)
   if(!betrag){
@@ -475,20 +489,42 @@ function analyzeLokal(text,filename){
 
   // ── DATUM: Belegdatum bevorzugen ─────────────────────────────────────────
   let datum=new Date().toISOString().split('T')[0];
-  // Suche nach "Datum:" oder "Rechnungsdatum:" Label zuerst
-  const datumLabel=text.match(/(?:datum|rechnungsdatum|belegdatum|ausstellungsdatum|vom)[:\s]+(\d{1,2})[.\-\/](\d{1,2})[.\-\/](\d{4})/i);
-  if(datumLabel){
-    const[,d,mo,y]=datumLabel;
-    datum=y+'-'+mo.padStart(2,'0')+'-'+d.padStart(2,'0');
-  } else {
-    // Kassabon: Datum meist in letzter Hälfte des Texts (nach Artikelliste)
+  const MONATSMAP={'januar':1,'jänner':1,'january':1,'jan':1,'februar':2,'february':2,'feb':2,'märz':3,'maerz':3,'march':3,'mar':3,'mär':3,'april':4,'apr':4,'mai':5,'may':5,'juni':6,'june':6,'jun':6,'juli':7,'july':7,'jul':7,'august':8,'aug':8,'september':9,'sep':9,'sept':9,'oktober':10,'october':10,'oct':10,'okt':10,'november':11,'nov':11,'dezember':12,'december':12,'dec':12,'dez':12};
+  function expandYear(y){const n=parseInt(y);return n<100?(n<50?2000+n:1900+n):n;}
+  function parseDatum(str){
+    if(!str)return null;
+    // "22. Juli 2026" / "22. JULI 2026" / "22 Juli 26"
+    const mL=str.match(/(\d{1,2})\.?\s+([a-zA-Z\u00e4\u00f6\u00fc\u00c4\u00d6\u00dc\u00df]{3,})\.?\s+(\d{2,4})/);
+    if(mL){const mo=MONATSMAP[mL[2].toLowerCase()];if(mo){const y=expandYear(mL[3]);return y+'-'+String(mo).padStart(2,'0')+'-'+mL[1].padStart(2,'0');}}
+    // DD.MM.YY oder DD.MM.YYYY - NICHT gefolgt von weiteren Ziffern (Uhrzeit vermeiden)
+    const mN=str.match(/(\d{1,2})[.\-\/](\d{1,2})[.\-\/](\d{2,4})(?!\d)/);
+    if(mN){
+      const d=parseInt(mN[1]),mo=parseInt(mN[2]),y=expandYear(mN[3]);
+      // Plausibilitätsprüfung: Tag 1-31, Monat 1-12
+      if(d>=1&&d<=31&&mo>=1&&mo<=12){return y+'-'+String(mo).padStart(2,'0')+'-'+String(d).padStart(2,'0');}
+    }
+    return null;
+  }
+  // D1: Label "BEZAHLT AM", "Datum:", "Rechnungsdatum:" etc.
+  const labelRe=/(?:bezahlt\s+am|datum|rechnungsdatum|belegdatum|ausstellungsdatum|vom)[:\s]+(.{4,40})/i;
+  const labelM=text.match(labelRe);
+  if(labelM){const d=parseDatum(labelM[1]);if(d)datum=d;}
+  // D2: Kassabon — suche in 2. Texthälfte (nach Artikelliste)
+  if(datum===new Date().toISOString().split('T')[0]){
     const zeilen=text.split(/\n/);
     const mitte=Math.floor(zeilen.length/2);
     const zweiteHaelfte=zeilen.slice(mitte).join('\n');
-    const datumM2=zweiteHaelfte.match(/(\d{1,2})[.\-\/](\d{1,2})[.\-\/](\d{4})/);
-    const datumM1=text.match(/(\d{1,2})[.\-\/](\d{1,2})[.\-\/](\d{4})/);
-    const dm=datumM2||datumM1;
-    if(dm){const[,d,mo,y]=dm;datum=y+'-'+mo.padStart(2,'0')+'-'+d.padStart(2,'0');}
+    // Erst langen Monatsnamen, dann numerisch
+    const d2lang=zweiteHaelfte.match(/\d{1,2}\.?\s+[a-zA-Z\u00e4\u00f6\u00fc\u00c4\u00d6\u00dc\u00df]{3,}\s+\d{2,4}/);
+    const d2num=zweiteHaelfte.match(/\d{1,2}[.\-\/]\d{1,2}[.\-\/]\d{2,4}(?!\d)/);
+    const d2=parseDatum(d2lang?d2lang[0]:(d2num?d2num[0]:null));
+    if(d2)datum=d2;
+  }
+  // D3: Ganzes Dokument — alle Datumsformate sammeln, bestes wählen
+  if(datum===new Date().toISOString().split('T')[0]){
+    const allD=[...text.matchAll(/\d{1,2}\.?\s+[a-zA-Z\u00e4\u00f6\u00fc\u00c4\u00d6\u00dc\u00df]{3,}\s+\d{2,4}|\d{1,2}[.\-\/]\d{1,2}[.\-\/]\d{2,4}(?!\d)/g)];
+    // Nimm letztes gültiges Datum (= oft Druck-/Belegdatum am Ende)
+    for(let i=allD.length-1;i>=0;i--){const d=parseDatum(allD[i][0]);if(d){datum=d;break;}}
   }
 
   // ── LIEFERANT: intelligent aus Text extrahieren ───────────────────────────
