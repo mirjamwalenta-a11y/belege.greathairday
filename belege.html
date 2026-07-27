@@ -71,7 +71,7 @@
     .nav{background:var(--surface);border-bottom:1px solid var(--border);display:flex;position:sticky;top:62px;z-index:99}
     .nav-btn{flex:1;padding:12px 4px;border:none;background:none;cursor:pointer;font-size:12px;font-weight:500;color:var(--ink3);font-family:inherit;border-bottom:2px solid transparent}
     .nav-btn.active{color:var(--accent);font-weight:700;border-bottom-color:var(--accent)}
-    .main{flex:1;padding:18px 16px 100px;overflow-y:auto}
+    .main{flex:1;padding:18px 16px 100px;overflow-y:auto;width:100%}
     .card{background:var(--surface);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow);margin-bottom:12px}
     .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
     .stat-label{font-size:10px;color:var(--ink3);text-transform:uppercase;letter-spacing:1px;margin-bottom:5px}
@@ -126,7 +126,7 @@
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 </head>
 <body>
-<div id="app" style="display:flex;align-items:center;justify-content:center;height:100dvh;flex-direction:column;gap:12px">
+<div id="app" style="display:flex;flex-direction:column;min-height:100dvh;width:100%;">
   <div class="spinner"></div>
   <div style="color:var(--ink3);font-size:13px">Wird geladen…</div>
 </div>
