@@ -18,10 +18,10 @@
       --border:#E4DCE8;--radius:14px;--shadow:0 1px 6px rgba(44,36,56,0.09);
     }
     html,body{height:100%;background:var(--canvas);font-family:'Inter',sans-serif;color:var(--ink);-webkit-font-smoothing:antialiased}
-    body{display:flex;flex-direction:column;min-height:100dvh}
-    .fullscreen{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:1000;padding:24px;}
+    body{display:flex;flex-direction:column;min-height:100dvh;width:100%;max-width:100%}
+    .fullscreen{position:fixed;inset:0;display:flex;flex-direction:column;z-index:1000;}
     .dark-screen{background:var(--accent)}
-    .light-screen{background:var(--canvas);justify-content:flex-start;padding-top:40px;overflow-y:auto}
+    .light-screen{background:var(--canvas);justify-content:flex-start;padding-top:40px;overflow-y:auto;align-items:stretch;}
     .auth-logo{font-size:48px;margin-bottom:8px}
     .auth-title{color:#fff;font-size:22px;font-weight:700;margin-bottom:6px}
     .auth-sub{color:var(--accentlight);font-size:13px;margin-bottom:28px;text-align:center}
