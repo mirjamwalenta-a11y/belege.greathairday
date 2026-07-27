@@ -18,8 +18,8 @@
       --border:#E4DCE8;--radius:14px;--shadow:0 1px 6px rgba(44,36,56,0.09);
     }
     html,body{height:100%;background:var(--canvas);font-family:'Inter',sans-serif;color:var(--ink);-webkit-font-smoothing:antialiased}
-    body{display:flex;flex-direction:column;max-width:480px;margin:0 auto;min-height:100dvh}
-    .fullscreen{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:1000;padding:24px;max-width:480px;margin:0 auto}
+    body{display:flex;flex-direction:column;min-height:100dvh}
+    .fullscreen{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:1000;padding:24px;}
     .dark-screen{background:var(--accent)}
     .light-screen{background:var(--canvas);justify-content:flex-start;padding-top:40px;overflow-y:auto}
     .auth-logo{font-size:48px;margin-bottom:8px}
@@ -105,7 +105,7 @@
     .btn-save{flex:1;background:var(--accent);color:#fff;border:none;border-radius:8px;padding:10px;font-size:13px;font-weight:600;font-family:inherit;cursor:pointer}
     .btn-cancel{flex:1;background:#F0EAF4;color:var(--ink2);border:none;border-radius:8px;padding:10px;font-size:13px;font-family:inherit;cursor:pointer}
     .pruef-overlay{position:fixed;inset:0;background:rgba(44,36,56,0.55);z-index:2000;display:flex;align-items:flex-end;justify-content:center;pointer-events:auto}
-    .pruef-sheet{background:var(--surface);border-radius:18px 18px 0 0;padding:20px 18px 32px;width:100%;max-width:480px;box-shadow:0 -4px 32px rgba(44,36,56,0.18);height:90vh;overflow-y:scroll;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
+    .pruef-sheet{background:var(--surface);border-radius:18px 18px 0 0;padding:20px 18px 32px;width:100%;;box-shadow:0 -4px 32px rgba(44,36,56,0.18);height:90vh;overflow-y:scroll;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
     .pruef-doc{width:100%;height:52vw;max-height:260px;border-radius:10px;border:1.5px solid #E5DFF0;background:#f7f5fa;margin-bottom:14px;object-fit:contain}
     .pruef-doc-pdf{width:100%;max-height:240px;overflow-y:auto;-webkit-overflow-scrolling:touch;border-radius:10px;border:1.5px solid #E5DFF0;display:block;margin-bottom:14px}
     .pruef-title{font-size:15px;font-weight:700;color:var(--accent);margin-bottom:4px}
