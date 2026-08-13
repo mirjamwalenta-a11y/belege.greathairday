@@ -274,11 +274,34 @@ async function upsertProfile(data){
   return result;
 }
 async function loadBelege(){
-  const d=await sbGet('/rest/v1/belege?user_id=eq.'+S.userId+'&order=erfasst.desc&select=*',S.token);
+  const d=await sbGet('/rest/v1/salon_belege?user_id=eq.'+S.userId+'&order=erfasst.desc&select=*',S.token);
   if(Array.isArray(d))S.belege=d;
 }
 async function insertBeleg(b){
-  const r=await fetch(SB_URL+'/rest/v1/belege',{
+  const payload={
+    user_id:S.userId,
+    datum:b.datum,
+    betrag:b.betrag,
+    netto:b.netto||null,
+    ust_betrag:b.ust_betrag||null,
+    ust_satz:b.ust_satz||null,
+    art:b.art,
+    lieferant:b.lieferant,
+    uid_lieferant:b.uid_lieferant||null,
+    rechnungsnummer:b.rechnungsnummer||null,
+    kategorie:b.kategorie,
+    beschreibung:b.beschreibung,
+    monat:b.monat,
+    dateiname:b.dateiname||null,
+    datei_url:b.datei_url||null,
+    betrieblich:b.betrieblich||'ja',
+    betrieblicher_anteil:b.betrieblicher_anteil||null,
+    vorsteuer_moeglich:b.vorsteuer_moeglich||'unklar',
+    ist_anlage:b.ist_anlage||false,
+    ki_confidence:b.ki_confidence||null,
+    steuer_ampel:b.steuer_ampel||'gelb',
+  };
+  const r=await fetch(SB_URL+'/rest/v1/salon_belege',{
     method:'POST',
     headers:{
       'Content-Type':'application/json',
@@ -286,7 +309,7 @@ async function insertBeleg(b){
       'Authorization':'Bearer '+S.token,
       'Prefer':'return=representation'
     },
-    body:JSON.stringify({...b,user_id:S.userId})
+    body:JSON.stringify(payload)
   });
   const d=await r.json();
   if(!r.ok){
@@ -297,11 +320,11 @@ async function insertBeleg(b){
   else await loadBelege();
 }
 async function updateBelegDB(id,data){
-  await sbPatch('/rest/v1/belege?id=eq.'+id+'&user_id=eq.'+S.userId,data,S.token);
+  await sbPatch('/rest/v1/salon_belege?id=eq.'+id+'&user_id=eq.'+S.userId,data,S.token);
   S.belege=S.belege.map(b=>b.id===id?{...b,...data}:b);
 }
 async function deleteBelegDB(id){
-  await sbDelete('/rest/v1/belege?id=eq.'+id+'&user_id=eq.'+S.userId,S.token);
+  await sbDelete('/rest/v1/salon_belege?id=eq.'+id+'&user_id=eq.'+S.userId,S.token);
   S.belege=S.belege.filter(b=>b.id!==id);
 }
 
@@ -609,8 +632,52 @@ function analyzeLokal(text,filename){
 async function analyzeClaude(text,filename){
   if(!S.apiKey)throw new Error('kein_key');
   const kats=S.profile?.kategorien||DEFAULT_KATS;
-  const prompt='Analysiere diesen Beleg und gib NUR JSON zurück (kein Markdown, kein Kommentar):\n{"datum":"YYYY-MM-DD","betrag":Zahl,"art":"ausgabe","lieferant":"Name","kategorie":"ID","beschreibung":"max 60 Zeichen"}\n\nRegeln:\n- betrag: IMMER der tatsächlich bezahlte Endbetrag NACH allen Rabatten/Gutschriften (z.B. bei Hofer-Bon: "HOFER PREIS" Wert, nicht die Summe vor Rabatten)\n- datum: das Belegdatum/Rechnungsdatum (nicht Lieferdatum oder Druckdatum)\n- lieferant: offizieller Firmenname des Ausstellers (z.B. "Hofer KG", "BILLA AG", nicht Adresse oder OCR-Artefakte)\n- art: "ausgabe" für Einkäufe/Rechnungen, "einnahme" nur für Zahlungseingänge\n- kategorie: NUR eine dieser IDs: '+kats.map(k=>k.id+'='+k.label).join(', ')+'\n\nDatei: '+filename+'\nBelegtext:\n'+text.substring(0,2000);
-  const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':S.apiKey,'anthropic-version':'2023-06-01'},body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:500,messages:[{role:'user',content:prompt}]})});
+  const prompt=`Analysiere diesen österreichischen Beleg und gib NUR JSON zurück (kein Markdown, kein Kommentar, keine Erklärung).
+
+Rückgabeformat:
+{
+  "datum": "YYYY-MM-DD",
+  "betrag": Zahl,
+  "netto": Zahl oder null,
+  "ust_betrag": Zahl oder null,
+  "ust_satz": Zahl oder null,
+  "art": "ausgabe",
+  "lieferant": "Name",
+  "uid_lieferant": "ATU..." oder null,
+  "rechnungsnummer": "..." oder null,
+  "kategorie": "ID",
+  "beschreibung": "max 60 Zeichen",
+  "betrieblich": "ja",
+  "betrieblicher_anteil": null,
+  "vorsteuer_moeglich": "ja",
+  "ist_anlage": false,
+  "ki_confidence": 0.00,
+  "steuer_ampel": "gruen"
+}
+
+Regeln:
+- betrag: IMMER der tatsächlich bezahlte Brutto-Endbetrag NACH allen Rabatten
+- netto: Nettobetrag ohne USt (= betrag - ust_betrag), oder null wenn nicht erkennbar
+- ust_betrag: der USt-Betrag laut Beleg, oder null wenn nicht erkennbar
+- ust_satz: 20 / 10 / 13 / 0 – nur wenn eindeutig erkennbar, sonst null
+- datum: Belegdatum/Rechnungsdatum, nicht Lieferdatum oder Druckdatum
+- lieferant: offizieller Firmenname des Ausstellers (z.B. "L'Oréal Austria GmbH"), nicht Adresse
+- uid_lieferant: UID-Nummer des Ausstellers wenn vorhanden (Format ATUxxxxxxxx), sonst null
+- rechnungsnummer: Rechnungs- oder Belegnummer wenn vorhanden, sonst null
+- art: "ausgabe" für Einkäufe/Rechnungen, "einnahme" nur für Zahlungseingänge
+- kategorie: NUR eine dieser IDs: ${kats.map(k=>k.id+'='+k.label).join(', ')}
+- betrieblich: "ja" wenn klar betrieblich (Friseurbedarfs-Lieferant, Salon-Rechnung), "nein" wenn klar privat, "gemischt" wenn beides möglich (z.B. Mobiltelefon, Auto)
+- betrieblicher_anteil: Prozentzahl (z.B. 50) nur wenn betrieblich="gemischt", sonst null
+- vorsteuer_moeglich: "ja" wenn Rechnung mit USt-Ausweis und betriebliche Nutzung, "nein" wenn Kassabon ohne UID-Ausweis oder eindeutig privat, "unklar" wenn nicht sicher beurteilbar
+- ist_anlage: true wenn Einzelwert voraussichtlich über 1000 EUR und längerfristig nutzbar (Geräte, Maschinen, Einrichtung), sonst false
+- ki_confidence: Gesamtsicherheit für diesen Beleg von 0.00 bis 1.00 (1.00 = alle Felder eindeutig erkannt)
+- steuer_ampel: "gruen" wenn Rechnung vollständig und steuerlich klar, "gelb" wenn Felder fehlen oder Beurteilung unsicher, "rot" wenn wichtige Pflichtangaben fehlen oder steuerlich problematisch
+
+Datei: ${filename}
+Belegtext:
+${text.substring(0,3000)}`;
+
+  const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':S.apiKey,'anthropic-version':'2023-06-01'},body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:800,messages:[{role:'user',content:prompt}]})});
   const data=await r.json();
   return JSON.parse(data.content?.map(i=>i.text||'').join('').trim().replace(/```json|```/g,'').trim());
 }
@@ -730,10 +797,21 @@ async function verarbeiteFile(file){
       res:{
         datum:res.datum||new Date().toISOString().split('T')[0],
         betrag:res.betrag||0,
+        netto:res.netto||null,
+        ust_betrag:res.ust_betrag||null,
+        ust_satz:res.ust_satz||null,
         lieferant:res.lieferant||'',
+        uid_lieferant:res.uid_lieferant||null,
+        rechnungsnummer:res.rechnungsnummer||null,
         art:res.art||'ausgabe',
         kategorie:res.kategorie||kats[0].id,
-        beschreibung:res.beschreibung||file.name
+        beschreibung:res.beschreibung||file.name,
+        betrieblich:res.betrieblich||'ja',
+        betrieblicher_anteil:res.betrieblicher_anteil||null,
+        vorsteuer_moeglich:res.vorsteuer_moeglich||'unklar',
+        ist_anlage:res.ist_anlage||false,
+        ki_confidence:res.ki_confidence||null,
+        steuer_ampel:res.steuer_ampel||'gelb',
       },
       dateiname:file.name,
       pdfText:text,
@@ -764,11 +842,29 @@ async function doPruefSpeichern(){
   const datum=document.getElementById('pruef-datum')?.value||p.res.datum;
   const betrag=parseFloat(String(document.getElementById('pruef-betrag')?.value||p.res.betrag).replace(',','.'));
   const lieferant=document.getElementById('pruef-lieferant')?.value||p.res.lieferant;
+  const nettoRaw=document.getElementById('pruef-netto')?.value;
+  const netto=nettoRaw?parseFloat(nettoRaw.replace(',','.'))||null:p.res.netto||null;
+  const ustSatzRaw=document.getElementById('pruef-ust-satz')?.value;
+  const ust_satz=ustSatzRaw!==''&&ustSatzRaw!=null?parseFloat(ustSatzRaw):p.res.ust_satz||null;
+  const ust_betrag=netto!=null&&betrag?Math.round((betrag-netto)*100)/100:p.res.ust_betrag||null;
+  const vorsteuer_moeglich=document.getElementById('pruef-vorsteuer')?.value||p.res.vorsteuer_moeglich||'unklar';
+  const betrieblich=document.getElementById('pruef-betrieblich')?.value||p.res.betrieblich||'ja';
   if(isNaN(betrag)||betrag<=0){toast('Betrag ungültig','err');return;}
   const kats=S.profile?.kategorien||DEFAULT_KATS;
   const monat=datum?datum.substring(0,7):S.monat;
   try{
-    await insertBeleg({datum,betrag,art:p.res.art,lieferant,kategorie:p.res.kategorie,beschreibung:p.res.beschreibung,monat,dateiname:p.dateiname,datei_url:p.datei_url});
+    await insertBeleg({
+      datum,betrag,netto,ust_betrag,ust_satz,
+      art:p.res.art,lieferant,
+      uid_lieferant:p.res.uid_lieferant||null,
+      rechnungsnummer:p.res.rechnungsnummer||null,
+      kategorie:p.res.kategorie,beschreibung:p.res.beschreibung,
+      monat,dateiname:p.dateiname,datei_url:p.datei_url,
+      betrieblich,betrieblicher_anteil:p.res.betrieblicher_anteil||null,
+      vorsteuer_moeglich,ist_anlage:p.res.ist_anlage||false,
+      ki_confidence:p.res.ki_confidence||null,
+      steuer_ampel:p.res.steuer_ampel||'gelb',
+    });
     toast('Beleg gespeichert ✓');
     if(p.localUrl)URL.revokeObjectURL(p.localUrl);
     S.pruef=null;
@@ -888,6 +984,18 @@ function renderPruefModal(){
     +'</label>'
     +'<label class="pruef-label">\u{1F3EA} Lieferant / Aussteller</label>'
     +'<input class="inp" id="pruef-lieferant" type="text" value="'+(p.res.lieferant||'')+'"/>'
+    // Steuer-Ampel
+    +(()=>{const a=p.res.steuer_ampel||'gelb';const map={gruen:{e:'🟢',t:'Beleg vollständig',c:'#D1FAE5',tc:'#065F46'},gelb:{e:'🟡',t:'Bitte prüfen',c:'#FEF3C7',tc:'#92400E'},rot:{e:'🔴',t:'Pflichtangaben fehlen',c:'#FEE2E2',tc:'#991B1B'}};const s=map[a]||map.gelb;return '<div style="background:'+s.c+';color:'+s.tc+';border-radius:8px;padding:9px 12px;font-size:12px;margin-top:12px;font-weight:600">'+s.e+' Steuer-Ampel: '+s.t+(p.res.ki_confidence?'&nbsp;&nbsp;·&nbsp;&nbsp;KI-Sicherheit: '+Math.round(p.res.ki_confidence*100)+'%':'')+'</div>';})()
+    // USt-Felder
+    +'<div style="display:flex;gap:9px;margin-top:10px">'
+    +'<div style="flex:1"><label class="pruef-label">USt-Satz (%)</label><select class="inp" id="pruef-ust-satz"><option value="">–</option><option value="20"'+(p.res.ust_satz==20?' selected':'')+'>20 %</option><option value="10"'+(p.res.ust_satz==10?' selected':'')+'>10 %</option><option value="13"'+(p.res.ust_satz==13?' selected':'')+'>13 %</option><option value="0"'+(p.res.ust_satz==0?' selected':'')+'>0 % / befreit</option></select></div>'
+    +'<div style="flex:1"><label class="pruef-label">Netto (\u20AC)</label><input class="inp" id="pruef-netto" type="text" inputmode="decimal" placeholder="\u2013" value="'+(p.res.netto!=null?parseFloat(p.res.netto).toFixed(2):'')+'"/></div>'
+    +'</div>'
+    // Vorsteuer + betrieblich
+    +'<div style="display:flex;gap:9px;margin-top:2px">'
+    +'<div style="flex:1"><label class="pruef-label">Vorsteuer</label><select class="inp" id="pruef-vorsteuer"><option value="unklar"'+(p.res.vorsteuer_moeglich==='unklar'?' selected':'')+'>&#10067; Unklar</option><option value="ja"'+(p.res.vorsteuer_moeglich==='ja'?' selected':'')+'>&#9989; Ja</option><option value="nein"'+(p.res.vorsteuer_moeglich==='nein'?' selected':'')+'>&#10060; Nein</option></select></div>'
+    +'<div style="flex:1"><label class="pruef-label">Betrieblich</label><select class="inp" id="pruef-betrieblich"><option value="ja"'+(p.res.betrieblich==='ja'?' selected':'')+'>&#9989; Ja</option><option value="gemischt"'+(p.res.betrieblich==='gemischt'?' selected':'')+'>&#9888;&#65039; Gemischt</option><option value="nein"'+(p.res.betrieblich==='nein'?' selected':'')+'>&#10060; Nein</option></select></div>'
+    +'</div>'
     +'<div class="pruef-actions">'
     +'<button class="btn-cancel" style="flex:1" onclick="S.pruef=null;render()">Verwerfen</button>'
     +'<button class="btn-save" id="pruef-speichern-btn" style="flex:2;opacity:0.4;cursor:not-allowed" disabled onclick="doPruefSpeichern()">\u2713 Gepr\u00FCft \u2013 Speichern</button>'
