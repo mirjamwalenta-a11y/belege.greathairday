@@ -274,7 +274,7 @@ async function upsertProfile(data){
   return result;
 }
 async function loadBelege(){
-  const d=await sbGet('/rest/v1/salon_belege?user_id=eq.'+S.userId+'&order=erfasst.desc&select=*',S.token);
+  const d=await sbGet('/rest/v1/belege_neu?user_id=eq.'+S.userId+'&order=erfasst.desc&select=*',S.token);
   if(Array.isArray(d))S.belege=d;
 }
 async function insertBeleg(b){
@@ -301,7 +301,7 @@ async function insertBeleg(b){
     ki_confidence:b.ki_confidence||null,
     steuer_ampel:b.steuer_ampel||'gelb',
   };
-  const r=await fetch(SB_URL+'/rest/v1/salon_belege',{
+  const r=await fetch(SB_URL+'/rest/v1/belege_neu',{
     method:'POST',
     headers:{
       'Content-Type':'application/json',
@@ -321,11 +321,11 @@ async function insertBeleg(b){
   else await loadBelege();
 }
 async function updateBelegDB(id,data){
-  await sbPatch('/rest/v1/salon_belege?id=eq.'+id+'&user_id=eq.'+S.userId,data,S.token);
+  await sbPatch('/rest/v1/belege_neu?id=eq.'+id+'&user_id=eq.'+S.userId,data,S.token);
   S.belege=S.belege.map(b=>b.id===id?{...b,...data}:b);
 }
 async function deleteBelegDB(id){
-  await sbDelete('/rest/v1/salon_belege?id=eq.'+id+'&user_id=eq.'+S.userId,S.token);
+  await sbDelete('/rest/v1/belege_neu?id=eq.'+id+'&user_id=eq.'+S.userId,S.token);
   S.belege=S.belege.filter(b=>b.id!==id);
 }
 
@@ -678,9 +678,11 @@ Datei: ${filename}
 Belegtext:
 ${text.substring(0,3000)}`;
 
-  const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':S.apiKey,'anthropic-version':'2023-06-01'},body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:800,messages:[{role:'user',content:prompt}]})});
+  const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':S.apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-3-5-sonnet-20241022',max_tokens:1000,messages:[{role:'user',content:prompt}]})});
+  if(!r.ok){const e=await r.json();console.error('Claude API Fehler:',e);throw new Error(e.error?.message||'API Fehler');}
   const data=await r.json();
-  return JSON.parse(data.content?.map(i=>i.text||'').join('').trim().replace(/```json|```/g,'').trim());
+  const raw=data.content?.map(i=>i.text||'').join('').trim();
+  return JSON.parse(raw.replace(/```json|```/g,'').trim());
 }
 // ── Tesseract OCR für Bilder ──────────────────────────────────────────────────
 function rotateBildCanvas(img,deg){
