@@ -627,7 +627,30 @@ function analyzeLokal(text,filename){
   ];
   for(const {k,id} of katMap){if(new RegExp(k).test(tl)){const found=kats.find(x=>x.id===id);if(found){kategorie=found.id;break;}}}
 
-  return{datum,betrag,art:'ausgabe',lieferant:lieferant.substring(0,60),kategorie,beschreibung:filename.replace(/\.[^.]+$/,'').substring(0,60)};
+  // ── MwSt / Netto: lokale Bestwert-Schätzung (ohne KI) ─────────────────────
+  let ust_satz=null,ust_betrag=null,netto=null;
+  // USt-Satz: "20% MwSt", "MwSt 20%", "USt-Satz: 20%", "inkl. 20,00% USt"
+  const satzM=text.match(/(\d{1,2}(?:,\d{1,2})?)\s?%\s*(?:mwst|ust)\b/i)||text.match(/\b(?:mwst|ust)[\s.:%-]{0,12}(\d{1,2}(?:,\d{1,2})?)\s?%/i);
+  if(satzM){const s=Math.round(parseFloat(satzM[1].replace(',','.')));if([0,10,13,20].includes(s))ust_satz=s;}
+  // USt-Betrag: "MwSt-Betrag 15,23", "davon USt 15,23", "enthaltene MwSt 15,23"
+  const ustBetragM=allM('(?:mwst[- ]?betrag|ust[- ]?betrag|davon\\s+(?:mwst|ust)|enthaltene[nr]?\\s+(?:mwst|ust)|(?:mwst|ust)\\s+(?:betrag|von))[^\\d]{0,20}('+NR+')',text);
+  if(ustBetragM.length){const v=parseVal(ustBetragM[ustBetragM.length-1][1]);if(v>0&&v<100000)ust_betrag=v;}
+  // Netto: "Nettobetrag 76,15", "Netto: 76,15", "Summe netto 76,15"
+  const nettoM=allM('(?:nettobetrag|netto[- ]?summe|summe\\s+netto|betrag\\s+netto|\\bnetto)[^\\d]{0,20}('+NR+')',text);
+  if(nettoM.length){const v=parseVal(nettoM[nettoM.length-1][1]);if(v>0&&v<1000000)netto=v;}
+  // Fehlenden Wert ableiten, sofern der Bruttobetrag bekannt ist
+  if(betrag>0){
+    if(ust_satz!=null&&netto==null&&ust_betrag==null){
+      netto=Math.round((betrag/(1+ust_satz/100))*100)/100;
+      ust_betrag=Math.round((betrag-netto)*100)/100;
+    }else if(netto!=null&&ust_betrag==null&&netto<=betrag){
+      ust_betrag=Math.round((betrag-netto)*100)/100;
+    }else if(ust_betrag!=null&&netto==null&&ust_betrag<=betrag){
+      netto=Math.round((betrag-ust_betrag)*100)/100;
+    }
+  }
+
+  return{datum,betrag,netto,ust_betrag,ust_satz,art:'ausgabe',lieferant:lieferant.substring(0,60),kategorie,beschreibung:filename.replace(/\.[^.]+$/,'').substring(0,60)};
 }
 // ── Claude ────────────────────────────────────────────────────────────────────
 async function analyzeClaude(text,filename){
@@ -787,10 +810,13 @@ async function verarbeiteFile(file){
       }).join('\n');
     }
     const textBereinigt=bereinigeFuerAnalyse(text);
-    let res;
+    let res,quelle='ki',kiFehler=null;
     try{res=await analyzeClaude(textBereinigt,file.name);}
     catch(e){
       // Kein API-Key oder Fehler → lokale Analyse aus PDF-Text
+      quelle='lokal';
+      kiFehler=(e&&e.message==='kein_key')?'Kein API-Key hinterlegt':((e&&e.message)||'Unbekannter Fehler bei der KI-Erkennung');
+      console.warn('KI-Erkennung fehlgeschlagen, nutze lokale Analyse:',kiFehler);
       res=analyzeLokal(textBereinigt,file.name);
     }
     const kats=S.profile?.kategorien||DEFAULT_KATS;
@@ -821,7 +847,9 @@ async function verarbeiteFile(file){
       ocrRaw:text,
       fileType:file.type,
       localUrl:URL.createObjectURL(file),
-      datei_url
+      datei_url,
+      quelle,
+      kiFehler
     };
   }catch(e){toast('Fehler: '+e.message,'err');}
   S.loading=false;render();
@@ -972,6 +1000,7 @@ function renderPruefModal(){
     +docHtml
     +'<div class="pruef-hint">Erkannte Werte pr\u00FCfen und bei Bedarf korrigieren.</div>'
     +(S.pruef?.ocrRaw?'<details style="margin-bottom:12px"><summary style="font-size:11px;color:var(--ink3);cursor:pointer;user-select:none">🔍 OCR-Rohtext anzeigen (für Debugging)</summary><pre style="font-size:10px;color:var(--ink2);background:#f5f5f5;border-radius:8px;padding:10px;margin-top:6px;overflow-x:auto;white-space:pre-wrap;max-height:200px;overflow-y:auto">'+((S.pruef?.ocrRaw||'').substring(0,1500).replace(/</g,'&lt;'))+'</pre></details>':'')
+    +(p.quelle==='lokal'?'<div style="background:#FEE2E2;color:#991B1B;border-radius:8px;padding:10px 12px;font-size:12px;margin-bottom:10px;border:1px solid #FCA5A5"><strong>&#9888;&#65039; KI-Erkennung nicht verfügbar</strong><br>Grund: '+String(p.kiFehler||'unbekannt').replace(/</g,'&lt;')+'<br>Datum, Betrag, Netto und MwSt wurden nur mit einfachen Textmustern geschätzt – bitte besonders sorgfältig prüfen.</div>':'')
     +(pruefNichtRechnung(p.pdfText||'',p.dateiname||'')?'<div style="background:#FFF3CD;color:#856404;border-radius:8px;padding:10px 12px;font-size:12px;margin-bottom:10px;border:1px solid #F0C040"><strong>&#9888;&#65039; Kein buchungsrelevanter Beleg?</strong><br>Dieses Dokument wirkt m\u00F6glicherweise wie ein Lieferschein, Avis, Mahnung oder Bestellbest\u00E4tigung. Bitte vor dem Speichern pr\u00FCfen.</div>':'')
     +(pruefDublette(p.res.lieferant,p.res.datum,p.res.betrag,p.dateiname)?'<div style="background:#FEE2E2;color:#991B1B;border-radius:8px;padding:10px 12px;font-size:12px;margin-bottom:10px;border:1px solid #FCA5A5"><strong>&#9888;&#65039; M\u00F6gliche Dublette</strong><br>Dieser Beleg k\u00F6nnte bereits erfasst worden sein. Bitte vor dem Speichern Lieferant, Datum, Betrag und Belegnummer pr\u00FCfen.</div>':'')
     +'<label class="pruef-label">&#x1F4C5; Datum</label>'
