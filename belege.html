@@ -467,6 +467,23 @@ function analyzeLokal(text,filename){
     }
   }
 
+  // P1c: Generisches Label "Betrag:" als eigenes Feld (typisch bei Telekom-/Energie-/Versicherungsrechnungen,
+  //      z.B. "Betrag:                    113,78"). Nicht "MwSt-Betrag"/"USt-Betrag"/"Nettobetrag" (ein Wort davor).
+  if(!betrag){
+    const lines=text.split(/\n/);
+    for(let i=0;i<lines.length;i++){
+      const zl=lines[i].trim();
+      if(/^betrag\s*:?\s*$/i.test(zl)){
+        const next=(lines[i+1]||'').trim();
+        const m=next.match(new RegExp('^('+NR+')'));
+        if(m){const v=parseVal(m[1]);if(v>0&&v<1000000){betrag=v;break;}}
+        continue;
+      }
+      const m2=zl.match(new RegExp('^betrag\\s*:?\\s+('+NR+')\\s*$','i'));
+      if(m2){const v=parseVal(m2[1]);if(v>0&&v<1000000){betrag=v;break;}}
+    }
+  }
+
   // P2: Starke Endbetrag-Keywords (nach Rabatten)
   if(!betrag){
     // P2: Starke Endbetrag-Keywords — nur positive Beträge, MwSt-Zeilen ausschließen
@@ -532,7 +549,11 @@ function analyzeLokal(text,filename){
   }
 
   // ── DATUM: Belegdatum bevorzugen ─────────────────────────────────────────
+  // WICHTIG: "gefunden"-Status über ein eigenes Flag tracken, NICHT über einen Vergleich
+  // mit dem heutigen Datum — sonst hält der Code ein korrekt erkanntes Datum fälschlich für
+  // "nicht gefunden", wenn der Beleg zufällig von heute ist, und sucht munter weiter.
   let datum=new Date().toISOString().split('T')[0];
+  let datumGefunden=false;
   const MONATSMAP={'januar':1,'jänner':1,'january':1,'jan':1,'februar':2,'february':2,'feb':2,'märz':3,'maerz':3,'march':3,'mar':3,'mär':3,'april':4,'apr':4,'mai':5,'may':5,'juni':6,'june':6,'jun':6,'juli':7,'july':7,'jul':7,'august':8,'aug':8,'september':9,'sep':9,'sept':9,'oktober':10,'october':10,'oct':10,'okt':10,'november':11,'nov':11,'dezember':12,'december':12,'dec':12,'dez':12};
   function expandYear(y){const n=parseInt(y);return n<100?(n<50?2000+n:1900+n):n;}
   function parseDatum(str){
@@ -549,12 +570,19 @@ function analyzeLokal(text,filename){
     }
     return null;
   }
-  // D1: Label "BEZAHLT AM", "Datum:", "Rechnungsdatum:" etc.
-  const labelRe=/(?:bezahlt\s+am|datum|rechnungsdatum|belegdatum|ausstellungsdatum|vom)[:\s]+(.{4,40})/i;
-  const labelM=text.match(labelRe);
-  if(labelM){const d=parseDatum(labelM[1]);if(d)datum=d;}
+  const DATUM_PATTERN='\\d{1,2}[.\\-\\/]\\d{1,2}[.\\-\\/]\\d{2,4}|\\d{1,2}\\.?\\s+[a-zA-Z\\u00e4\\u00f6\\u00fc\\u00c4\\u00d6\\u00dc\\u00df]{3,}\\.?\\s+\\d{2,4}';
+  // D1a: "Belegdatum" höchste Priorität (eindeutigstes Label auf Rechnungen), Wert muss direkt danach stehen
+  const belegdatumM=text.match(new RegExp('belegdatum\\s*:?\\s{0,4}('+DATUM_PATTERN+')','i'));
+  if(belegdatumM){const d=parseDatum(belegdatumM[1]);if(d){datum=d;datumGefunden=true;}}
+  // D1b: weitere Labels "BEZAHLT AM", "Rechnungsdatum:", "Datum:" etc. — Wert muss direkt danach stehen
+  //      (enges Fenster, damit nicht versehentlich ein unabhängiger Zeitraum/Datum weiter hinten im Text matcht)
+  if(!datumGefunden){
+    const labelRe=new RegExp('(?:bezahlt\\s+am|rechnungsdatum|ausstellungsdatum|datum|vom)\\s*:?\\s{0,4}('+DATUM_PATTERN+')','i');
+    const labelM=text.match(labelRe);
+    if(labelM){const d=parseDatum(labelM[1]);if(d){datum=d;datumGefunden=true;}}
+  }
   // D2: Kassabon — suche in 2. Texthälfte (nach Artikelliste)
-  if(datum===new Date().toISOString().split('T')[0]){
+  if(!datumGefunden){
     const zeilen=text.split(/\n/);
     const mitte=Math.floor(zeilen.length/2);
     const zweiteHaelfte=zeilen.slice(mitte).join('\n');
@@ -562,13 +590,13 @@ function analyzeLokal(text,filename){
     const d2lang=zweiteHaelfte.match(/\d{1,2}\.?\s+[a-zA-Z\u00e4\u00f6\u00fc\u00c4\u00d6\u00dc\u00df]{3,}\s+\d{2,4}/);
     const d2num=zweiteHaelfte.match(/\d{1,2}[.\-\/]\d{1,2}[.\-\/]\d{2,4}(?!\d)/);
     const d2=parseDatum(d2lang?d2lang[0]:(d2num?d2num[0]:null));
-    if(d2)datum=d2;
+    if(d2){datum=d2;datumGefunden=true;}
   }
   // D3: Ganzes Dokument — alle Datumsformate sammeln, bestes wählen
-  if(datum===new Date().toISOString().split('T')[0]){
+  if(!datumGefunden){
     const allD=[...text.matchAll(/\d{1,2}\.?\s+[a-zA-Z\u00e4\u00f6\u00fc\u00c4\u00d6\u00dc\u00df]{3,}\s+\d{2,4}|\d{1,2}[.\-\/]\d{1,2}[.\-\/]\d{2,4}(?!\d)/g)];
     // Nimm letztes gültiges Datum (= oft Druck-/Belegdatum am Ende)
-    for(let i=allD.length-1;i>=0;i--){const d=parseDatum(allD[i][0]);if(d){datum=d;break;}}
+    for(let i=allD.length-1;i>=0;i--){const d=parseDatum(allD[i][0]);if(d){datum=d;datumGefunden=true;break;}}
   }
 
   // ── LIEFERANT: intelligent aus Text extrahieren ───────────────────────────
@@ -596,8 +624,18 @@ function analyzeLokal(text,filename){
       {r:/\bwella\b/i,n:'Wella'},
       {r:/l.?or.?al/i,n:"L'Oréal"},
       {r:/\bschwarzkopf\b/i,n:'Schwarzkopf'},
+      {r:/\bmagenta\b|\bt-mobile\b/i,n:'Magenta Telekom'},
+      {r:/\ba1\s*telekom|\ba1\.net\b/i,n:'A1 Telekom'},
+      {r:/\bdrei\b\s*(?:at|austria)?\s*rechnung|\bhutchison\s+drei\b/i,n:'Drei (3)'},
+      {r:/\bkelag\b/i,n:'Kelag'},
+      {r:/\bevn\b/i,n:'EVN'},
+      {r:/\bsvs\b|\bsozialversicherung\s+der\s+selbst/i,n:'SVS'},
     ];
     for(const {r,n} of bekannte){if(r.test(text))return n;}
+
+    // 1b) Generisches Rechnungskopf-Muster "Ihre <Anbieter> Rechnung" (häufig bei Telekom/Energie/Versicherung)
+    const titelM=text.match(/ihre\s+([a-zA-ZäöüÄÖÜß0-9&.\-]{2,25})\s+rechnung/i);
+    if(titelM)return titelM[1].trim();
 
     // 2) Erste nicht-leere Zeile die wie ein Firmenname aussieht
     //    (keine reine Zahl, kein Datum, nicht zu kurz, nicht zu lang)
@@ -630,7 +668,7 @@ function analyzeLokal(text,filename){
   // ── MwSt / Netto: lokale Bestwert-Schätzung (ohne KI) ─────────────────────
   let ust_satz=null,ust_betrag=null,netto=null;
   // USt-Satz: "20% MwSt", "MwSt 20%", "USt-Satz: 20%", "inkl. 20,00% USt"
-  const satzM=text.match(/(\d{1,2}(?:,\d{1,2})?)\s?%\s*(?:mwst|ust)\b/i)||text.match(/\b(?:mwst|ust)[\s.:%-]{0,12}(\d{1,2}(?:,\d{1,2})?)\s?%/i);
+  const satzM=text.match(/(\d{1,2}(?:,\d{1,2})?)\s?%\s*(?:mwst|ust)\b/i)||text.match(/\b(?:mwst|ust)[-\s]?satz\b[\s.:%-]{0,8}(\d{1,2}(?:,\d{1,2})?)\s?%?/i)||text.match(/\b(?:mwst|ust)[\s.:%-]{0,12}(\d{1,2}(?:,\d{1,2})?)\s?%/i);
   if(satzM){const s=Math.round(parseFloat(satzM[1].replace(',','.')));if([0,10,13,20].includes(s))ust_satz=s;}
   // USt-Betrag: "MwSt-Betrag 15,23", "davon USt 15,23", "enthaltene MwSt 15,23"
   const ustBetragM=allM('(?:mwst[- ]?betrag|ust[- ]?betrag|davon\\s+(?:mwst|ust)|enthaltene[nr]?\\s+(?:mwst|ust)|(?:mwst|ust)\\s+(?:betrag|von))[^\\d]{0,20}('+NR+')',text);
