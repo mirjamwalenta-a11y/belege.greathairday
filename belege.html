@@ -314,7 +314,8 @@ async function insertBeleg(b){
   const d=await r.json();
   if(!r.ok){
     console.error('Beleg-Fehler:',d);
-    throw new Error(d.message||d.error||'Beleg konnte nicht gespeichert werden');
+    const detail=d.message||d.error||d.hint||d.details||JSON.stringify(d);
+    throw new Error('Supabase: '+detail);
   }
   if(Array.isArray(d)&&d[0])S.belege.unshift(d[0]);
   else await loadBelege();
@@ -656,7 +657,7 @@ Rückgabeformat:
 }
 
 Regeln:
-- betrag: IMMER der tatsächlich bezahlte Brutto-Endbetrag NACH allen Rabatten
+- betrag: IMMER der Brutto-GESAMTBETRAG der gesamten Rechnung (Rechnungsendbetrag / Gesamt-Summe / Zahlbetrag / Total inkl. MwSt.). NICHT der Einzelpreis einer Position, NICHT der Nettobetrag, NICHT eine Zwischensumme. Bei Lieferantenrechnungen mit mehreren Positionen ist das IMMER der groesste ausgewiesene Endbetrag – typischerweise ganz unten auf der Rechnung mit Label wie "Gesamt-Summe", "Rechnungsbetrag", "Zahlbetrag", "Total", "Zu zahlen". Wenn du zwei plausible Betraege siehst (z.B. 44,95 und 1.498,46), nimm IMMER den als Gesamtbetrag der als Summe/Total/Gesamt/Zahlbetrag gekennzeichnet ist.
 - netto: Nettobetrag ohne USt (= betrag - ust_betrag), oder null wenn nicht erkennbar
 - ust_betrag: der USt-Betrag laut Beleg, oder null wenn nicht erkennbar
 - ust_satz: 20 / 10 / 13 / 0 – nur wenn eindeutig erkennbar, sonst null
