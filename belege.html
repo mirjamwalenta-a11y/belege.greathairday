@@ -169,7 +169,13 @@ async function sbPatch(path,body,token){
   return r.json();
 }
 async function sbDelete(path,token){
-  await fetch(SB_URL+path,{method:'DELETE',headers:sbHeaders(token)});
+  let r=await fetch(SB_URL+path,{method:'DELETE',headers:sbHeaders(token)});
+  if(r.status===401){try{await refreshToken();r=await fetch(SB_URL+path,{method:'DELETE',headers:sbHeaders(S.token)});}catch(e){S.screen='auth';render();throw e;}}
+  if(!r.ok){
+    let msg='Löschen fehlgeschlagen (HTTP '+r.status+')';
+    try{const j=await r.json();msg=j.message||j.error||msg;}catch(e){}
+    throw new Error(msg);
+  }
 }
 
 // Auth
@@ -275,7 +281,12 @@ async function upsertProfile(data){
 }
 async function loadBelege(){
   const d=await sbGet('/rest/v1/belege_neu?user_id=eq.'+S.userId+'&order=erfasst.desc&select=*',S.token);
-  if(Array.isArray(d))S.belege=d;
+  // id konsequent als String behandeln: Supabase liefert die id (bigint) als JS-Zahl zurück,
+  // während onclick-Handler im HTML sie immer als String einbetten ('...'+b.id+'...'). Ein
+  // strikter Vergleich (===) zwischen Zahl und String schlägt sonst IMMER fehl — dadurch
+  // lassen sich Belege weder bearbeiten (Bearbeiten-Button reagiert nicht) noch aus der
+  // Liste entfernen (Löschen wirkt lokal, bis zum nächsten Neuladen).
+  if(Array.isArray(d))S.belege=d.map(b=>({...b,id:String(b.id)}));
 }
 async function insertBeleg(b){
   const payload={
@@ -317,15 +328,20 @@ async function insertBeleg(b){
     const detail=d.message||d.error||d.hint||d.details||JSON.stringify(d);
     throw new Error('Supabase: '+detail);
   }
-  if(Array.isArray(d)&&d[0])S.belege.unshift(d[0]);
+  if(Array.isArray(d)&&d[0])S.belege.unshift({...d[0],id:String(d[0].id)});
   else await loadBelege();
 }
 async function updateBelegDB(id,data){
-  await sbPatch('/rest/v1/belege_neu?id=eq.'+id+'&user_id=eq.'+S.userId,data,S.token);
-  S.belege=S.belege.map(b=>b.id===id?{...b,...data}:b);
+  const r=await sbPatch('/rest/v1/belege_neu?id=eq.'+id+'&user_id=eq.'+S.userId,data,S.token);
+  // PostgREST liefert bei return=representation ein leeres Array, wenn die RLS-Policy das
+  // Update stillschweigend blockiert hat (kein HTTP-Fehler!) — das muss als Fehler behandelt
+  // werden, sonst wirkt es lokal erfolgreich, obwohl in der Datenbank nichts geändert wurde.
+  if(!Array.isArray(r)||!r.length){throw new Error('Beleg konnte nicht aktualisiert werden (evtl. Berechtigungsproblem)');}
+  S.belege=S.belege.map(b=>String(b.id)===String(id)?{...b,...data}:b);
 }
 async function deleteBelegDB(id){
   await sbDelete('/rest/v1/belege_neu?id=eq.'+id+'&user_id=eq.'+S.userId,S.token);
+  id=String(id);
   S.belege=S.belege.filter(b=>b.id!==id);
 }
 
@@ -1197,7 +1213,16 @@ function render(){
   const ausg=bfm.filter(b=>b.art==='ausgabe').reduce((s,b)=>s+(b.betrag||0),0);
   const einn=bfm.filter(b=>b.art==='einnahme').reduce((s,b)=>s+(b.betrag||0),0);
   const katS=kats.map(k=>({...k,summe:bfm.filter(b=>b.kategorie===k.id&&b.art==='ausgabe').reduce((s,b)=>s+(b.betrag||0),0)})).filter(k=>k.summe>0).sort((a,b)=>b.summe-a.summe);
-  const allM=new Set(S.belege.map(b=>b.monat));allM.add(getMonat());
+  // Monatsliste: alle Monate mit Belegen PLUS ein rollierendes Fenster (18 Monate zurück, 3 voraus),
+  // damit sich auch Monate ohne bisherige Belege auswählen lassen (z.B. um im Voraus zu erfassen).
+  const allM=new Set(S.belege.map(b=>b.monat));allM.add(getMonat());allM.add(S.monat);
+  {
+    const heute=new Date();
+    for(let i=-18;i<=3;i++){
+      const d=new Date(heute.getFullYear(),heute.getMonth()+i,1);
+      allM.add(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'));
+    }
+  }
   const mOpts=Array.from(allM).sort().reverse().map(m=>'<option value="'+m+'"'+(m===S.monat?' selected':'')+'>'+mL(m)+'</option>').join('');
   const logoH=p?.logo_url?'<img src="'+p.logo_url+'" class="header-logo-img"/>'  :'<div class="header-logo-emoji">'+(p?.emoji||'💼')+'</div>';
 
@@ -1216,11 +1241,11 @@ function render(){
   else if(ansicht==='belege'){
     const items=bfm.map(b=>{
       const k=kk(b.kategorie);
-      if(S.editId===b.id){
+      if(String(S.editId)===String(b.id)){
         const eO=kats.map(k=>'<option value="'+k.id+'"'+(k.id===S.editData.kategorie?' selected':'')+'>'+k.icon+' '+k.label+'</option>').join('');
         return'<div class="beleg-item"><div class="edit-form"><input class="inp" type="date" value="'+(S.editData.datum||'')+'" onchange="S.editData.datum=this.value"/><input class="inp" placeholder="Lieferant" value="'+(S.editData.lieferant||'')+'" oninput="S.editData.lieferant=this.value"/><input class="inp" placeholder="Beschreibung" value="'+(S.editData.beschreibung||'')+'" oninput="S.editData.beschreibung=this.value"/><div class="form-row"><input class="inp" placeholder="Betrag" value="'+(S.editData.betrag||'')+'" oninput="S.editData.betrag=this.value" style="flex:1"/><select class="inp" onchange="S.editData.art=this.value" style="flex:1"><option value="ausgabe"'+(S.editData.art==='ausgabe'?' selected':'')+'>Ausgabe</option><option value="einnahme"'+(S.editData.art==='einnahme'?' selected':'')+'>Einnahme</option></select></div><select class="inp" onchange="S.editData.kategorie=this.value">'+eO+'</select><div class="edit-actions"><button class="btn-save" onclick="doEdit()">Speichern</button><button class="btn-cancel" onclick="S.editId=null;render()">Abbrechen</button></div></div></div>';
       }
-      return'<div class="beleg-item"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px"><div style="flex:1;min-width:0"><div><span class="beleg-tag" style="background:#7C6B8A1A;color:#7C6B8A">'+(k?.icon||'📦')+' '+(k?.label||'')+'</span><span style="font-size:10px;color:var(--ink3);margin-left:4px">'+b.datum+'</span></div><div class="beleg-name">'+(b.lieferant||'—')+'</div><div class="beleg-desc">'+(b.beschreibung||'')+'</div></div><div class="beleg-amount" style="color:'+(b.art==='ausgabe'?'var(--red)':'var(--green)')+'">'+(b.art==='ausgabe'?'−':'+')+eur(b.betrag||0)+'</div></div><div class="beleg-actions"><button class="btn-sm btn-edit" onclick="S.editId=\''+b.id+'\';S.editData=Object.assign({},S.belege.find(x=>x.id===\''+b.id+'\'));render()">✏️ Bearbeiten</button><button class="btn-sm btn-del" onclick="if(confirm(\'Löschen?\'))deleteBelegDB(\''+b.id+'\').then(()=>render())">🗑️ Löschen</button></div></div>';
+      return'<div class="beleg-item"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px"><div style="flex:1;min-width:0"><div><span class="beleg-tag" style="background:#7C6B8A1A;color:#7C6B8A">'+(k?.icon||'📦')+' '+(k?.label||'')+'</span><span style="font-size:10px;color:var(--ink3);margin-left:4px">'+b.datum+'</span></div><div class="beleg-name">'+(b.lieferant||'—')+'</div><div class="beleg-desc">'+(b.beschreibung||'')+'</div></div><div class="beleg-amount" style="color:'+(b.art==='ausgabe'?'var(--red)':'var(--green)')+'">'+(b.art==='ausgabe'?'−':'+')+eur(b.betrag||0)+'</div></div><div class="beleg-actions"><button class="btn-sm btn-edit" onclick="S.editId=\''+b.id+'\';S.editData=Object.assign({},S.belege.find(x=>x.id===\''+b.id+'\'));render()">✏️ Bearbeiten</button><button class="btn-sm btn-del" onclick="if(confirm(\'Löschen?\'))deleteBelegDB(\''+b.id+'\').then(()=>render()).catch(e=>toast(\'Fehler: \'+e.message,\'err\'))">🗑️ Löschen</button></div></div>';
     }).join('');
     inhalt='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-size:13px;color:var(--ink3)">'+bfm.length+' Belege · '+mL(S.monat)+'</div>'+(bfm.length?'<button class="btn-outline" onclick="exportCSV()">📤 BMD-CSV</button>':'')+'</div>'+(bfm.length===0?'<div class="empty"><div class="empty-icon">🗂️</div><div style="font-size:14px">Keine Belege in diesem Monat.</div></div>':items);
   }
@@ -1322,8 +1347,10 @@ async function doManuell(){
 }
 async function doEdit(){
   const d=S.editData;
-  await updateBelegDB(S.editId,{datum:d.datum,betrag:parseFloat(String(d.betrag).replace(',','.')),art:d.art,lieferant:d.lieferant,kategorie:d.kategorie,beschreibung:d.beschreibung});
-  S.editId=null;render();
+  try{
+    await updateBelegDB(S.editId,{datum:d.datum,betrag:parseFloat(String(d.betrag).replace(',','.')),art:d.art,lieferant:d.lieferant,kategorie:d.kategorie,beschreibung:d.beschreibung});
+    S.editId=null;render();toast('Beleg aktualisiert ✓');
+  }catch(e){toast('Fehler: '+e.message,'err');}
 }
 function saveKey(){
   const v=document.getElementById('aki')?.value?.trim();
