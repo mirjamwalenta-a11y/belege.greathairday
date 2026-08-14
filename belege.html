@@ -972,21 +972,36 @@ function generiereTippsLokal(ctx){
   return{tipps:tipps.slice(0,4),hinweis:'Diese Hinweise sind unverbindliche Diskussionspunkte und ersetzen keine Steuerberatung.'};
 }
 async function generiereTipps(){
-  S.tippsLoading=true;render();
+  // Erst SOFORT die lokalen (regelbasierten) Tipps anzeigen — synchron, ohne Netzwerkaufruf,
+  // kann praktisch nicht hängen bleiben oder lautlos scheitern. Danach optional, falls ein
+  // API-Key hinterlegt ist, im Hintergrund per KI verfeinern. So sieht man IMMER sofort ein
+  // Ergebnis, statt bei einem hängenden/fehlschlagenden Netzwerkaufruf gar nichts zu sehen.
+  let ctx;
   try{
-    const ctx=berechneTippsKontext();
-    let erg;
-    if(S.apiKey){
-      try{erg=await generiereTippsKI(ctx);}
-      catch(e){console.warn('KI-Tipps fehlgeschlagen, nutze lokale Tipps:',e);erg=generiereTippsLokal(ctx);}
-    }else{
-      erg=generiereTippsLokal(ctx);
-    }
+    ctx=berechneTippsKontext();
+    S.tipps=generiereTippsLokal(ctx);
+    S.tippsDatum=new Date().toISOString();
+    try{localStorage.setItem('sb_tipps',JSON.stringify({tipps:S.tipps,datum:S.tippsDatum}));}catch(e){}
+  }catch(e){
+    console.error('Tipps-Fehler (lokal):',e);
+    toast('Fehler beim Erstellen der Tipps: '+(e&&e.message?e.message:'unbekannt'),'err');
+    return;
+  }
+  try{render();}catch(e){console.error('Render-Fehler:',e);}
+  if(!S.apiKey||!ctx)return;
+  S.tippsLoading=true;
+  try{render();}catch(e){console.error('Render-Fehler:',e);}
+  try{
+    const erg=await generiereTippsKI(ctx);
     S.tipps=erg;
     S.tippsDatum=new Date().toISOString();
     try{localStorage.setItem('sb_tipps',JSON.stringify({tipps:erg,datum:S.tippsDatum}));}catch(e){}
-  }catch(e){toast('Fehler: '+e.message,'err');}
-  S.tippsLoading=false;render();
+  }catch(e){
+    console.warn('KI-Tipps fehlgeschlagen, lokale Tipps bleiben aktiv:',e);
+  }finally{
+    S.tippsLoading=false;
+    try{render();}catch(e){console.error('Render-Fehler:',e);}
+  }
 }
 // ── Tesseract OCR für Bilder ──────────────────────────────────────────────────
 function rotateBildCanvas(img,deg){
