@@ -220,6 +220,7 @@ let S={
   authMode:'login',
   authEmail:'',authPass:'',authName:'',authErr:'',
   draft:null,
+  tipps:null,tippsDatum:null,tippsLoading:false,
 };
 
 function emptyM(){return{datum:'',betrag:'',art:'ausgabe',lieferant:'',kategorie:'',beschreibung:''};}
@@ -242,6 +243,8 @@ function loadLocal(){
     S.token=sessionStorage.getItem('sb_token')||localStorage.getItem('sb_token');
     S.userId=sessionStorage.getItem('sb_uid')||localStorage.getItem('sb_uid');
     S.apiKey=localStorage.getItem('sb_apikey')||'';
+    const cachedTipps=JSON.parse(localStorage.getItem('sb_tipps')||'null');
+    if(cachedTipps){S.tipps=cachedTipps.tipps;S.tippsDatum=cachedTipps.datum;}
   }catch(e){}
 }
 
@@ -815,6 +818,117 @@ ${text.substring(0,3000)}`;
   const raw=data.content?.map(i=>i.text||'').join('').trim();
   return JSON.parse(raw.replace(/```json|```/g,'').trim());
 }
+// ── Steuertipps (unverbindliche Diskussionspunkte fürs Steuerberater-Gespräch) ─
+// Aggregiert NUR Summen/Zählungen aus den bereits im Browser geladenen Belegen (S.belege) —
+// dafür ist kein zusätzlicher Datenbank-Zugriff nötig, es werden keine Einzelbelege an eine
+// KI geschickt, sondern höchstens anonymisierte Kennzahlen (falls ein API-Key hinterlegt ist).
+function berechneTippsKontext(){
+  const heute=new Date();
+  const zwoelfMonateAb=new Date(heute.getFullYear(),heute.getMonth()-11,1);
+  function relevantMonat(m){
+    if(!m)return false;
+    const teile=m.split('-');
+    const d=new Date(parseInt(teile[0]),parseInt(teile[1])-1,1);
+    return d>=zwoelfMonateAb;
+  }
+  const belegeRelevant=(S.belege||[]).filter(b=>relevantMonat(b.monat));
+  const kats=S.profile?.kategorien||DEFAULT_KATS;
+  const katSummen=kats.map(k=>({label:k.label,summe:belegeRelevant.filter(b=>b.kategorie===k.id&&b.art==='ausgabe').reduce((s,b)=>s+(b.betrag||0),0)})).filter(k=>k.summe>0).sort((a,b)=>b.summe-a.summe);
+  const rotCount=belegeRelevant.filter(b=>b.steuer_ampel==='rot').length;
+  const gelbCount=belegeRelevant.filter(b=>b.steuer_ampel==='gelb').length;
+  const vorsteuerUnklarCount=belegeRelevant.filter(b=>b.vorsteuer_moeglich==='unklar').length;
+  const gwgKandidaten=belegeRelevant.filter(b=>b.art==='ausgabe'&&(b.betrag||0)>=400&&(b.betrag||0)<=1500&&!b.ist_anlage);
+  const grossAnschaffungen=belegeRelevant.filter(b=>b.art==='ausgabe'&&((b.betrag||0)>=1500||b.ist_anlage));
+  const bewirtung=belegeRelevant.filter(b=>/bewirt|restaurant|gasthaus|caf[eé]|kaffeehaus/i.test(((b.beschreibung||'')+' '+(b.lieferant||''))));
+  const gesamtAusgaben=belegeRelevant.filter(b=>b.art==='ausgabe').reduce((s,b)=>s+(b.betrag||0),0);
+  return{
+    anzahlBelege:belegeRelevant.length,
+    gesamtAusgaben,katSummen,rotCount,gelbCount,vorsteuerUnklarCount,
+    gwgAnzahl:gwgKandidaten.length,
+    grossAnschaffungenAnzahl:grossAnschaffungen.length,
+    bewirtungAnzahl:bewirtung.length,
+    aktuellerMonat:heute.getMonth()+1,
+    aktuellesJahr:heute.getFullYear(),
+  };
+}
+async function generiereTippsKI(ctx){
+  const prompt=`Du bist eine sachkundige, aber vorsichtige Sparringspartnerin für steuerliche Optimierung in Österreich — speziell für Einzelunternehmerinnen mit Einnahmen-Ausgaben-Rechnung (EÄR), die mindestens eine angestellte Person beschäftigen (Beispiel: Friseursalon). Dein Ziel: der Nutzerin helfen, proaktiv die richtigen Fragen zu stellen, bevor sie mit ihrer Steuerberatung spricht — nicht, die Steuerberatung zu ersetzen.
+
+WICHTIGE REGELN (nicht verhandelbar):
+- Du bist KEIN Ersatz für die Steuerberatung. Jeder Tipp ist ein Diskussionspunkt fürs Gespräch mit der Steuerberatung, keine verbindliche Aussage.
+- Nenne NIE konkrete aktuelle Euro-Grenzen, Prozentsätze oder Paragraphen als sicher gültig — österreichisches Steuerrecht ändert sich häufig (Inflationsanpassungen, Jahressteuergesetze). Formuliere stattdessen z.B. "die aktuelle GWG-Grenze solltest du bei deiner Steuerberatung erfragen".
+- Keine falsche Sicherheit ("das darfst du absetzen", "das spart dir X Euro"). Verwende "das wäre wert zu besprechen", "das könnte sich lohnen — die genaue Wirkung hängt von deiner Gesamtsituation ab".
+- Zur Mitarbeiter:in/Lohnverrechnung nur allgemein auf Gesprächsbedarf hinweisen, keine konkreten Lohnsteuer- oder Sozialversicherungsberechnungen.
+- Keine Steuerlast- oder Ersparnis-Beträge in Euro als feste Zahl nennen.
+
+Hier sind AGGREGIERTE Kennzahlen aus den letzten 12 Monaten ihrer Belege-App (KEINE Einzelbelege, nur Summen/Zählungen):
+- Anzahl erfasster Belege: ${ctx.anzahlBelege}
+- Gesamtausgaben (betrieblich, letzte 12 Monate): ${ctx.gesamtAusgaben.toFixed(2)} EUR
+- Ausgaben nach Kategorie: ${ctx.katSummen.map(k=>k.label+': '+k.summe.toFixed(2)+' EUR').join(', ')||'keine'}
+- Belege mit unvollständigen Pflichtangaben (Steuer-Ampel Rot): ${ctx.rotCount}
+- Belege mit unsicherer Erkennung (Steuer-Ampel Gelb): ${ctx.gelbCount}
+- Belege mit unklarem Vorsteuerabzug: ${ctx.vorsteuerUnklarCount}
+- Anschaffungen im typischen GWG-Grenzbereich (grob 400–1500 EUR, nicht als Anlage markiert): ${ctx.gwgAnzahl}
+- Größere Anschaffungen (ab ca. 1500 EUR oder als Anlage markiert): ${ctx.grossAnschaffungenAnzahl}
+- Möglicherweise bewirtungsbezogene Belege: ${ctx.bewirtungAnzahl}
+- Aktueller Monat: ${ctx.aktuellerMonat}/${ctx.aktuellesJahr}
+
+Gib NUR JSON zurück (kein Markdown, kein Kommentar, keine Erklärung):
+{"tipps":[{"titel":"kurzer Titel","text":"2-4 Sätze, konkret auf ihre Zahlen bezogen, endet mit einem Diskussionspunkt fürs Steuerberater-Gespräch"}],"hinweis":"ein Satz, dass dies keine Steuerberatung ersetzt"}
+
+Erzeuge 2-4 Tipps, priorisiert nach Relevanz für ihre aktuelle Situation (z.B. Jahreszeit, auffällige Kennzahlen). Wenn zu wenige Daten vorhanden sind, sag das ehrlich und gib stattdessen 1-2 allgemeine Hinweise, worauf sie achten könnte.`;
+  const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':S.apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-3-5-sonnet-20241022',max_tokens:1200,messages:[{role:'user',content:prompt}]})});
+  if(!r.ok){const e=await r.json();console.error('Tipps-KI Fehler:',e);throw new Error(e.error?.message||'API Fehler');}
+  const data=await r.json();
+  const raw=data.content?.map(i=>i.text||'').join('').trim();
+  return JSON.parse(raw.replace(/```json|```/g,'').trim());
+}
+function generiereTippsLokal(ctx){
+  const tipps=[];
+  if(ctx.anzahlBelege===0){
+    return{tipps:[{titel:'Noch keine Daten',text:'Für die letzten 12 Monate sind noch keine Belege erfasst. Sobald ein paar Belege drin sind, kann ich dir passendere Gesprächspunkte für die Steuerberatung zeigen.'}],hinweis:'Das ersetzt keine Steuerberatung.'};
+  }
+  if(ctx.gwgAnzahl>0){
+    tipps.push({titel:'Anschaffungen im GWG-Grenzbereich',text:'In den letzten 12 Monaten gibt es '+ctx.gwgAnzahl+' Anschaffung(en) im typischen Grenzbereich für geringwertige Wirtschaftsgüter (grob 400–1500 €). Je nach aktueller GWG-Grenze und Timing könnte Sofortabschreibung statt Abschreibung über mehrere Jahre sinnvoll sein. 💡 Für\'s Gespräch: die aktuell gültige GWG-Grenze erfragen und die betroffenen Belege gemeinsam durchgehen.'});
+  }
+  if(ctx.rotCount>0){
+    tipps.push({titel:'Belege mit fehlenden Pflichtangaben',text:ctx.rotCount+' Beleg(e) der letzten 12 Monate sind in der App als "Pflichtangaben fehlen" markiert — das kann den Vorsteuerabzug gefährden. 💡 Für\'s Gespräch: diese Belege gezielt durchsehen und klären, ob eine berichtigte Rechnung nötig ist.'});
+  }
+  if(ctx.vorsteuerUnklarCount>2){
+    tipps.push({titel:'Unklarer Vorsteuerabzug',text:'Bei '+ctx.vorsteuerUnklarCount+' Belegen ist der Vorsteuerabzug als "unklar" markiert. 💡 Für\'s Gespräch: gemeinsam prüfen, bei welchen davon ein Vorsteuerabzug tatsächlich möglich wäre.'});
+  }
+  if(ctx.bewirtungAnzahl>0){
+    tipps.push({titel:'Bewirtungsspesen dokumentieren',text:'Es gibt '+ctx.bewirtungAnzahl+' möglicherweise bewirtungsbezogene Belege. Für die 50%- bzw. 100%-Regel ist eine saubere Dokumentation (Anlass, Teilnehmer) wichtig. 💡 Für\'s Gespräch: prüfen, ob die Dokumentation für diese Belege ausreicht.'});
+  }
+  if([11,12].includes(ctx.aktuellerMonat)){
+    tipps.push({titel:'Jahresende naht',text:'Gegen Jahresende lohnt oft ein Blick auf geplante Investitionen (noch heuer vs. nächstes Jahr) und den Gewinnfreibetrag. 💡 Für\'s Gespräch: anstehende Anschaffungen und eine mögliche Wertpapierkauf-Frist für den Gewinnfreibetrag ansprechen.'});
+  }
+  if(ctx.katSummen.length){
+    const top=ctx.katSummen[0];
+    tipps.push({titel:'Größte Ausgabenkategorie: '+top.label,text:'In den letzten 12 Monaten war "'+top.label+'" mit '+top.summe.toFixed(2)+' € deine größte betriebliche Ausgabenkategorie. 💡 Für\'s Gespräch: prüfen, ob bei dieser Kategorie Pauschalierung oder eine andere Erfassung steuerlich günstiger wäre.'});
+  }
+  if(!tipps.length){
+    tipps.push({titel:'Aktuell unauffällig',text:'In den letzten 12 Monaten gibt es keine auffälligen Muster in deinen Belegen. Ein regelmäßiger Check-in mit der Steuerberatung bleibt trotzdem sinnvoll, z.B. zu SVS-Vorauszahlung und Gewinnfreibetrag.'});
+  }
+  return{tipps:tipps.slice(0,4),hinweis:'Diese Hinweise sind unverbindliche Diskussionspunkte und ersetzen keine Steuerberatung.'};
+}
+async function generiereTipps(){
+  S.tippsLoading=true;render();
+  try{
+    const ctx=berechneTippsKontext();
+    let erg;
+    if(S.apiKey){
+      try{erg=await generiereTippsKI(ctx);}
+      catch(e){console.warn('KI-Tipps fehlgeschlagen, nutze lokale Tipps:',e);erg=generiereTippsLokal(ctx);}
+    }else{
+      erg=generiereTippsLokal(ctx);
+    }
+    S.tipps=erg;
+    S.tippsDatum=new Date().toISOString();
+    try{localStorage.setItem('sb_tipps',JSON.stringify({tipps:erg,datum:S.tippsDatum}));}catch(e){}
+  }catch(e){toast('Fehler: '+e.message,'err');}
+  S.tippsLoading=false;render();
+}
 // ── Tesseract OCR für Bilder ──────────────────────────────────────────────────
 function rotateBildCanvas(img,deg){
   const c=document.createElement('canvas');
@@ -1302,6 +1416,17 @@ function render(){
       +'<div class="card"><div class="section-title">Oder manuell eingeben</div><div class="form-group"><input class="inp" id="manuell-datum" type="date" value="'+S.manuell.datum+'" onchange="S.manuell.datum=this.value"/><input class="inp" id="manuell-lieferant" placeholder="Lieferant" value="'+S.manuell.lieferant+'" oninput="S.manuell.lieferant=this.value"/><input class="inp" id="manuell-beschreibung" placeholder="Beschreibung *" value="'+S.manuell.beschreibung+'" oninput="S.manuell.beschreibung=this.value"/><div class="form-row"><input class="inp" id="manuell-betrag" placeholder="Betrag *" inputmode="decimal" value="'+S.manuell.betrag+'" oninput="S.manuell.betrag=this.value" style="flex:1"/><select class="inp" id="manuell-art" onchange="S.manuell.art=this.value" style="flex:1"><option value="ausgabe">Ausgabe</option><option value="einnahme">Einnahme</option></select></div><select class="inp" id="manuell-kategorie" onchange="S.manuell.kategorie=this.value">'+mO+'</select><button class="btn-primary" onclick="doManuell()">Beleg speichern</button></div></div>';
   }
 
+  else if(ansicht==='tipps'){
+    const datumFmt=S.tippsDatum?new Date(S.tippsDatum).toLocaleDateString('de-AT',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):null;
+    const cards=(S.tipps?.tipps||[]).map(t=>'<div class="card"><div style="font-size:14px;font-weight:700;color:var(--accent);margin-bottom:6px">💡 '+t.titel+'</div><div style="font-size:13px;color:var(--ink2);line-height:1.5">'+t.text+'</div></div>').join('');
+    inhalt='<div class="card" style="background:#F0EAF4"><div style="font-size:13px;color:var(--ink2);line-height:1.5">Unverbindliche Steuerspar-Impulse auf Basis deiner letzten 12 Monate — als Gesprächsgrundlage für deine Steuerberatung, keine Buchhaltung oder Steuerberatung.</div></div>'
+      +(S.tippsLoading?'<div class="analyzing"><div class="analyzing-dot"></div><span style="font-size:13px;color:var(--accent);font-weight:500">Tipps werden erstellt…</span></div>':'')
+      +(cards?cards:(S.tippsLoading?'':'<div class="empty"><div class="empty-icon">💡</div><div style="font-size:14px">Noch keine Tipps erstellt.</div></div>'))
+      +(S.tipps?.hinweis?'<div style="font-size:11px;color:var(--ink3);margin:10px 0;line-height:1.5">ℹ️ '+S.tipps.hinweis+'</div>':'')
+      +(datumFmt?'<div style="font-size:11px;color:var(--ink3);margin-bottom:10px">Zuletzt aktualisiert: '+datumFmt+' Uhr</div>':'')
+      +'<button class="btn-primary" '+(S.tippsLoading?'disabled style="opacity:0.5"':'')+' onclick="generiereTipps()">'+(S.tipps?'🔄 Tipps neu erstellen':'💡 Tipps erstellen')+'</button>';
+  }
+
   else if(ansicht==='einstellungen'){
     inhalt='<div class="card"><div class="section-title">⚙️ Einstellungen</div><div style="display:flex;flex-direction:column;gap:14px">'
       +'<div><div style="font-size:11px;color:var(--ink3);margin-bottom:4px">KONTO</div><div style="font-size:13px">'+(S.userId?.substring(0,8)+'…')+'</div></div>'
@@ -1314,7 +1439,7 @@ function render(){
   }
 
   app.innerHTML='<div class="header"><div class="header-left">'+logoH+'<div><div class="header-sub">'+(p?.name||'')+'</div><div class="header-title">Meine Belege</div></div></div><select class="month-select" onchange="S.monat=this.value;render()">'+mOpts+'</select></div>'
-    +'<nav class="nav"><button class="nav-btn'+(ansicht==='dashboard'?' active':'')+'" onclick="S.ansicht=\'dashboard\';render()">Übersicht</button><button class="nav-btn'+(ansicht==='belege'?' active':'')+'" onclick="S.ansicht=\'belege\';render()">Belege</button><button class="nav-btn'+(ansicht==='neu'?' active':'')+'" onclick="S.ansicht=\'neu\';render()">+ Neu</button><button class="nav-btn'+(ansicht==='einstellungen'?' active':'')+'" onclick="S.ansicht=\'einstellungen\';render()">⚙️</button></nav>'
+    +'<nav class="nav"><button class="nav-btn'+(ansicht==='dashboard'?' active':'')+'" onclick="S.ansicht=\'dashboard\';render()">Übersicht</button><button class="nav-btn'+(ansicht==='belege'?' active':'')+'" onclick="S.ansicht=\'belege\';render()">Belege</button><button class="nav-btn'+(ansicht==='neu'?' active':'')+'" onclick="S.ansicht=\'neu\';render()">+ Neu</button><button class="nav-btn'+(ansicht==='tipps'?' active':'')+'" onclick="S.ansicht=\'tipps\';render()">💡 Tipps</button><button class="nav-btn'+(ansicht==='einstellungen'?' active':'')+'" onclick="S.ansicht=\'einstellungen\';render()">⚙️</button></nav>'
     +'<main class="main">'+inhalt+'</main>';
 
   const dz=document.getElementById('dz');
