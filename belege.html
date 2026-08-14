@@ -704,14 +704,14 @@ function analyzeLokal(text,filename){
 
   // ── MwSt / Netto: lokale Bestwert-Schätzung (ohne KI) ─────────────────────
   let ust_satz=null,ust_betrag=null,netto=null;
-  // USt-Satz: "20% MwSt", "MwSt 20%", "USt-Satz: 20%", "inkl. 20,00% USt"
-  const satzM=text.match(/(\d{1,2}(?:,\d{1,2})?)\s?%\s*(?:mwst|ust)\b/i)||text.match(/\b(?:mwst|ust)[-\s]?satz\b[\s.:%-]{0,8}(\d{1,2}(?:,\d{1,2})?)\s?%?/i)||text.match(/\b(?:mwst|ust)[\s.:%-]{0,12}(\d{1,2}(?:,\d{1,2})?)\s?%/i);
+  // USt-Satz: "20% MwSt", "MwSt 20%", "USt-Satz: 20%", "inkl. 20,00% USt", "USt Total (Rechnung) 20 %" (Telekom-Sammelrechnungen)
+  const satzM=text.match(/(\d{1,2}(?:,\d{1,2})?)\s?%\s*(?:mwst|ust)\b/i)||text.match(/\b(?:mwst|ust)[-\s]?satz\b[\s.:%-]{0,8}(\d{1,2}(?:,\d{1,2})?)\s?%?/i)||text.match(/\b(?:mwst|ust)\s*total\b[^%\d]{0,20}(\d{1,2}(?:,\d{1,2})?)\s?%/i)||text.match(/\b(?:mwst|ust)[\s.:%-]{0,12}(\d{1,2}(?:,\d{1,2})?)\s?%/i);
   if(satzM){const s=Math.round(parseFloat(satzM[1].replace(',','.')));if([0,10,13,20].includes(s))ust_satz=s;}
-  // USt-Betrag: "MwSt-Betrag 15,23", "davon USt 15,23", "enthaltene MwSt 15,23"
-  const ustBetragM=allM('(?:mwst[- ]?betrag|ust[- ]?betrag|davon\\s+(?:mwst|ust)|enthaltene[nr]?\\s+(?:mwst|ust)|(?:mwst|ust)\\s+(?:betrag|von))[^\\d]{0,20}('+NR+')',text);
+  // USt-Betrag: "MwSt-Betrag 15,23", "davon USt 15,23", "enthaltene MwSt 15,23", "USt Total (Rechnung) 20 % 18,96" (Telekom-Sammelrechnungen)
+  const ustBetragM=allM('(?:mwst[- ]?betrag|ust[- ]?betrag|davon\\s+(?:mwst|ust)|enthaltene[nr]?\\s+(?:mwst|ust)|(?:mwst|ust)\\s+(?:betrag|von)|(?:mwst|ust)\\s*total[^%\\d]{0,20}\\d{1,2}(?:,\\d{1,2})?\\s?%)[^\\d]{0,20}('+NR+')',text);
   if(ustBetragM.length){const v=parseVal(ustBetragM[ustBetragM.length-1][1]);if(v>0&&v<100000)ust_betrag=v;}
-  // Netto: "Nettobetrag 76,15", "Netto: 76,15", "Summe netto 76,15"
-  const nettoM=allM('(?:nettobetrag|netto[- ]?summe|summe\\s+netto|betrag\\s+netto|\\bnetto)[^\\d]{0,20}('+NR+')',text);
+  // Netto: "Nettobetrag 76,15", "Netto: 76,15", "Summe netto 76,15", "Betrag in EUR exkl. USt. 94,82" (Telekom-Sammelrechnungen)
+  const nettoM=allM('(?:nettobetrag|netto[- ]?summe|summe\\s+netto|betrag\\s+netto|betrag\\s+in\\s+eur\\s+exkl\\.?\\s*ust\\.?|summe\\s+exkl\\.?\\s*ust\\.?|\\bnetto)[^\\d]{0,20}('+NR+')',text);
   if(nettoM.length){const v=parseVal(nettoM[nettoM.length-1][1]);if(v>0&&v<1000000)netto=v;}
   // Fehlenden Wert ableiten, sofern der Bruttobetrag bekannt ist
   if(betrag>0){
