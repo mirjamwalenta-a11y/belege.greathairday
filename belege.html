@@ -667,26 +667,27 @@ function analyzeLokal(text,filename){
       {r:/\bevn\b/i,n:'EVN'},
       {r:/\bsvs\b|\bsozialversicherung\s+der\s+selbst/i,n:'SVS'},
     ];
-    for(const {r,n} of bekannte){if(r.test(text))return n;}
+    for(const {r,n} of bekannte){if(r.test(text))return{name:n,sicher:true};}
 
     // 1b) Generisches Rechnungskopf-Muster "Ihre <Anbieter> Rechnung" (häufig bei Telekom/Energie/Versicherung)
     const titelM=text.match(/ihre\s+([a-zA-ZäöüÄÖÜß0-9&.\-]{2,25})\s+rechnung/i);
-    if(titelM)return titelM[1].trim();
+    if(titelM)return{name:titelM[1].trim(),sicher:true};
 
     // 2) Erste nicht-leere Zeile die wie ein Firmenname aussieht
     //    (keine reine Zahl, kein Datum, nicht zu kurz, nicht zu lang)
     const skipRe=/^[\d\s.,€*#\/\-:]+$|^\d{1,2}[.\-\/]\d{1,2}[.\-\/]\d{4}|^(quittung|rechnung|kassabon|kassenbon|bon|kassa|beleg|datum|tel|fax|uid|atu|dvr|iban|bic)/i;
     for(const z of zeilen.slice(0,8)){
       if(z.length>=3&&z.length<=50&&!skipRe.test(z)&&/[a-zA-ZäöüÄÖÜß]/.test(z)){
-        return z;
+        return{name:z,sicher:true};
       }
     }
 
-    // 3) Fallback: Dateiname ohne Endung
-    return filename.replace(/\.[^.]+$/,'').replace(/[_-]/g,' ').substring(0,50);
+    // 3) Fallback: Dateiname ohne Endung — UNSICHER, da nur geraten
+    return{name:filename.replace(/\.[^.]+$/,'').replace(/[_-]/g,' ').substring(0,50),sicher:false};
   }
 
-  const lieferant=extrahiereLieferant(text,filename);
+  const lieferantErg=extrahiereLieferant(text,filename);
+  const lieferant=lieferantErg.name;
 
   // ── KATEGORIE ─────────────────────────────────────────────────────────────
   const tl=text.toLowerCase();
@@ -724,7 +725,40 @@ function analyzeLokal(text,filename){
     }
   }
 
-  return{datum,betrag,netto,ust_betrag,ust_satz,art:'ausgabe',lieferant:lieferant.substring(0,60),kategorie,beschreibung:filename.replace(/\.[^.]+$/,'').substring(0,60)};
+  // ── UID-Nummer des Ausstellers (österr. Format ATUxxxxxxxx) ────────────────
+  const uidM=text.match(/\bATU\s?(\d{8})\b/i);
+  const uid_lieferant=uidM?('ATU'+uidM[1]):null;
+
+  // ── Rechnungs-/Belegnummer ──────────────────────────────────────────────────
+  const rnM=text.match(/(?:rechnungs?-?nr\.?|rechnungsnummer|beleg-?nr\.?|belegnummer|re-?nr\.?)\s*:?\s*([A-Za-z0-9\/\-.]{3,25})/i);
+  const rechnungsnummer=rnM?rnM[1].trim():null;
+
+  // ── Vorsteuer & Steuer-Ampel: einfache Plausibilitätsprüfung ────────────────
+  // (österr. Kleinbetragsrechnung bis 400€ inkl. USt: vereinfachte Angaben reichen,
+  // keine Ausstellerin-UID nötig; darüber braucht es UID + Rechnungsnummer für den
+  // vollen Vorsteuerabzug)
+  const KLEINBETRAG=400;
+  const hatUst=ust_satz!=null||ust_betrag!=null;
+  let vorsteuer_moeglich='unklar';
+  if(ust_satz===0){
+    vorsteuer_moeglich='nein';
+  }else if(hatUst&&(uid_lieferant||betrag<=KLEINBETRAG)){
+    vorsteuer_moeglich='ja';
+  }else if(!hatUst&&betrag>0){
+    vorsteuer_moeglich='unklar';
+  }
+
+  let steuer_ampel='gelb';
+  // Grün nur, wenn wirklich alles Wesentliche erkannt wurde — inkl. USt-Info (sonst zu optimistisch)
+  const vollstaendigGenug=betrag>0&&datumGefunden&&lieferantErg.sicher&&hatUst&&(uid_lieferant||betrag<=KLEINBETRAG);
+  const kritischeLuecke=betrag<=0||!lieferantErg.sicher||(betrag>KLEINBETRAG&&!uid_lieferant&&!hatUst);
+  if(vollstaendigGenug){
+    steuer_ampel='gruen';
+  }else if(kritischeLuecke){
+    steuer_ampel='rot';
+  }
+
+  return{datum,betrag,netto,ust_betrag,ust_satz,art:'ausgabe',lieferant:lieferant.substring(0,60),uid_lieferant,rechnungsnummer,vorsteuer_moeglich,steuer_ampel,kategorie,beschreibung:filename.replace(/\.[^.]+$/,'').substring(0,60)};
 }
 // ── Claude ────────────────────────────────────────────────────────────────────
 async function analyzeClaude(text,filename){
