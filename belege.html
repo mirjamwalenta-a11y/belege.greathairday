@@ -290,6 +290,7 @@ async function loadBelege(){
   // lassen sich Belege weder bearbeiten (Bearbeiten-Button reagiert nicht) noch aus der
   // Liste entfernen (Löschen wirkt lokal, bis zum nächsten Neuladen).
   if(Array.isArray(d))S.belege=d.map(b=>({...b,id:String(b.id)}));
+  syncOsAufgaben();
 }
 async function insertBeleg(b){
   const payload={
@@ -333,6 +334,7 @@ async function insertBeleg(b){
   }
   if(Array.isArray(d)&&d[0])S.belege.unshift({...d[0],id:String(d[0].id)});
   else await loadBelege();
+  syncOsAufgaben();
 }
 async function updateBelegDB(id,data){
   const r=await sbPatch('/rest/v1/belege_neu?id=eq.'+id+'&user_id=eq.'+S.userId,data,S.token);
@@ -346,6 +348,46 @@ async function deleteBelegDB(id){
   await sbDelete('/rest/v1/belege_neu?id=eq.'+id+'&user_id=eq.'+S.userId,S.token);
   id=String(id);
   S.belege=S.belege.filter(b=>b.id!==id);
+}
+
+// ── OS-Integration ────────────────────────────────────────────────────────────
+async function syncOsAufgaben(){
+  try{
+    const monat=S.monat||getMonat();
+    const offene=S.belege.filter(b=>b.monat===monat).length;
+    if(!offene){
+      await fetch(SB_URL+'/rest/v1/os_aufgaben?bereich=eq.belege&status=eq.offen',{
+        method:'PATCH',
+        headers:{...sbHeaders(S.token),'Prefer':'return=minimal'},
+        body:JSON.stringify({status:'erledigt',erledigt_am:new Date().toISOString()})
+      });
+      return;
+    }
+    const titel=offene===1?'1 Beleg wartet auf dich':offene+' Belege warten auf dich';
+    const existing=await sbGet('/rest/v1/os_aufgaben?bereich=eq.belege&status=eq.offen&select=id',S.token);
+    if(Array.isArray(existing)&&existing.length>0){
+      await fetch(SB_URL+'/rest/v1/os_aufgaben?bereich=eq.belege&status=eq.offen',{
+        method:'PATCH',
+        headers:{...sbHeaders(S.token),'Prefer':'return=minimal'},
+        body:JSON.stringify({titel})
+      });
+    }else{
+      await fetch(SB_URL+'/rest/v1/os_aufgaben',{
+        method:'POST',
+        headers:{...sbHeaders(S.token),'Content-Type':'application/json','Prefer':'return=minimal'},
+        body:JSON.stringify({
+          bereich:'belege',
+          titel,
+          status:'offen',
+          prioritaet:'rot',
+          quelle:'app',
+          app_link:'https://mirjamwalenta-a11y.github.io/belege.greathairday/belege.html'
+        })
+      });
+    }
+  }catch(e){
+    console.warn('OS-Sync fehlgeschlagen:',e.message);
+  }
 }
 
 // ── Auth actions ──────────────────────────────────────────────────────────────
