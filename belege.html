@@ -335,6 +335,12 @@ async function insertBeleg(b){
   if(Array.isArray(d)&&d[0])S.belege.unshift({...d[0],id:String(d[0].id)});
   else await loadBelege();
   syncOsAufgaben();
+  // ── GHD-EREIGNIS ──────────────────────────────────────────────
+  const monatBelege = S.belege.filter(b => b.monat === (b.monat || getMonat())).length;
+  belegeWoerniEreignis(
+    monatBelege === 1 ? '1 neuer Beleg erfasst' : monatBelege + ' Belege diesen Monat',
+    'wann-moeglich'
+  );
 }
 async function updateBelegDB(id,data){
   const r=await sbPatch('/rest/v1/belege_neu?id=eq.'+id+'&user_id=eq.'+S.userId,data,S.token);
@@ -348,6 +354,30 @@ async function deleteBelegDB(id){
   await sbDelete('/rest/v1/belege_neu?id=eq.'+id+'&user_id=eq.'+S.userId,S.token);
   id=String(id);
   S.belege=S.belege.filter(b=>b.id!==id);
+}
+
+
+// ── GHD-EREIGNIS (Wörni) ─────────────────────────────────────────────────────
+const GHD_WOERNI_URL = 'https://wrxlaltgtgkdomklgrlj.supabase.co';
+const GHD_WOERNI_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndyeGxhbHRndGdrZG9ta2xncmxqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQyNDYwMzYsImV4cCI6MjA5OTgyMjAzNn0.Bw8ch-EJb_cLYTwxHdpjUJWgoCjje3Jc32pB0yiBS8g';
+async function belegeWoerniEreignis(titel, prioritaet) {
+  try {
+    const gh = { 'apikey': GHD_WOERNI_KEY, 'Authorization': 'Bearer ' + GHD_WOERNI_KEY, 'Content-Type': 'application/json' };
+    // Upsert: prüfen ob schon ungelesenes Ereignis vom Typ 'beleg_neu' existiert
+    const check = await fetch(GHD_WOERNI_URL + '/rest/v1/ghd_ereignisse?app=eq.Belege&typ=eq.beleg_neu&gelesen=eq.false&select=id', { headers: gh });
+    const existing = await check.json();
+    if (Array.isArray(existing) && existing.length > 0) {
+      await fetch(GHD_WOERNI_URL + '/rest/v1/ghd_ereignisse?app=eq.Belege&typ=eq.beleg_neu&gelesen=eq.false', {
+        method: 'PATCH', headers: { ...gh, 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ titel, prioritaet, erstellt_am: new Date().toISOString() })
+      });
+    } else {
+      await fetch(GHD_WOERNI_URL + '/rest/v1/ghd_ereignisse', {
+        method: 'POST', headers: { ...gh, 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ app: 'Belege', typ: 'beleg_neu', titel, prioritaet, gelesen: false })
+      });
+    }
+  } catch(e) { console.warn('Wörni-Ereignis Belege:', e); }
 }
 
 // ── OS-Integration ────────────────────────────────────────────────────────────
