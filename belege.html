@@ -943,7 +943,7 @@ Datei: ${filename}
 Belegtext:
 ${text.substring(0,3000)}`;
 
-  const r=await fetch('https://wrxlaltgtgkdomklgrlj.supabase.co/functions/v1/dynamic-processor',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1000,messages:[{role:'user',content:prompt}]})});
+  const r=await fetch('https://wrxlaltgtgkdomklgrlj.supabase.co/functions/v1/rapid-service',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1000,messages:[{role:'user',content:prompt}]})});
   if(!r.ok){const e=await r.json();console.error('Claude API Fehler:',e);throw new Error(e.error?.message||'API Fehler');}
   const data=await r.json();
   const raw=data.content?.map(i=>i.text||'').join('').trim();
@@ -1008,7 +1008,7 @@ Gib NUR JSON zurück (kein Markdown, kein Kommentar, keine Erklärung):
 {"tipps":[{"titel":"kurzer Titel","text":"2-4 Sätze, konkret auf ihre Zahlen bezogen, endet mit einem Diskussionspunkt fürs Steuerberater-Gespräch"}],"hinweis":"ein Satz, dass dies keine Steuerberatung ersetzt"}
 
 Erzeuge 2-4 Tipps, priorisiert nach Relevanz für ihre aktuelle Situation (z.B. Jahreszeit, auffällige Kennzahlen). Wenn zu wenige Daten vorhanden sind, sag das ehrlich und gib stattdessen 1-2 allgemeine Hinweise, worauf sie achten könnte.`;
-  const r=await fetch('https://wrxlaltgtgkdomklgrlj.supabase.co/functions/v1/dynamic-processor',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1200,messages:[{role:'user',content:prompt}]})});
+  const r=await fetch('https://wrxlaltgtgkdomklgrlj.supabase.co/functions/v1/rapid-service',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1200,messages:[{role:'user',content:prompt}]})});
   if(!r.ok){const e=await r.json();console.error('Tipps-KI Fehler:',e);throw new Error(e.error?.message||'API Fehler');}
   const data=await r.json();
   const raw=data.content?.map(i=>i.text||'').join('').trim();
@@ -1301,6 +1301,41 @@ function exportCSV(){
   toast('BMD-CSV exportiert ✓');
 }
 
+function exportAbschlussCSV(){
+  const bfm=S.belege.filter(b=>b.monat===S.monat);
+  if(!bfm.length){toast('Keine Belege in diesem Monat','err');return;}
+  const kats=S.profile?.kategorien||DEFAULT_KATS;
+  const kopf='Datum;Lieferant;Beschreibung;Kategorie;Art;Brutto (EUR);Netto (EUR);MwSt (EUR)\n';
+  const zeilen=bfm.map(b=>{
+    const brutto=b.betrag||0;
+    const netto=b.art==='ausgabe'?brutto/1.2:brutto;
+    const mwst=b.art==='ausgabe'?brutto-netto:0;
+    const kat=kats.find(k=>k.id===b.kategorie);
+    return [
+      b.datum||'',
+      csvClean(b.lieferant||''),
+      csvClean(b.beschreibung||''),
+      csvClean(kat?kat.label:b.kategorie||''),
+      b.art==='ausgabe'?'Ausgabe':'Einnahme',
+      brutto.toFixed(2).replace('.',','),
+      netto.toFixed(2).replace('.',','),
+      mwst.toFixed(2).replace('.',',')
+    ].join(';');
+  }).join('\n');
+  // Zusammenfassung
+  const sumBrutto=bfm.filter(b=>b.art==='ausgabe').reduce((s,b)=>s+(b.betrag||0),0);
+  const sumNetto=sumBrutto/1.2;
+  const sumMwSt=sumBrutto-sumNetto;
+  const zusammen='\n;;GESAMT AUSGABEN;;Ausgabe;'+sumBrutto.toFixed(2).replace('.',',')+';'+sumNetto.toFixed(2).replace('.',',')+';'+sumMwSt.toFixed(2).replace('.',',');
+  const bom='\uFEFF';
+  const blob=new Blob([bom+kopf+zeilen+zusammen],{type:'text/csv;charset=utf-8;'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='Steuerberater_'+mL(S.monat).replace(' ','_')+'.csv';
+  a.click();
+  toast('CSV exportiert ✓');
+}
+
 // ── Boot ──────────────────────────────────────────────────────────────────────
 async function boot(){
   loadLocal();
@@ -1573,6 +1608,52 @@ function render(){
       +'<button class="btn-primary" '+(S.tippsLoading?'disabled style="opacity:0.5"':'')+' onclick="generiereTipps()">'+(S.tipps?'🔄 Tipps neu erstellen':'💡 Tipps erstellen')+'</button>';
   }
 
+  else if(ansicht==='abschluss'){
+    const bfm=S.belege.filter(b=>b.monat===S.monat);
+    const kats=S.profile?.kategorien||DEFAULT_KATS;
+    const ausgaben=bfm.filter(b=>b.art==='ausgabe');
+    const einnahmen=bfm.filter(b=>b.art==='einnahme');
+    const sumAusgaben=ausgaben.reduce((s,b)=>s+(b.betrag||0),0);
+    const sumEinnahmen=einnahmen.reduce((s,b)=>s+(b.betrag||0),0);
+    const netto=sumAusgaben/1.2;
+    const mwst=sumAusgaben-netto;
+
+    // Kategorien-Summen
+    const katSummen={};
+    ausgaben.forEach(b=>{
+      const k=b.kategorie||'sonstige';
+      katSummen[k]=(katSummen[k]||0)+(b.betrag||0);
+    });
+    const katRows=Object.entries(katSummen).sort((a,b)=>b[1]-a[1]).map(([kid,sum])=>{
+      const k=kats.find(x=>x.id===kid)||{icon:'📦',label:kid};
+      const pct=sumAusgaben>0?Math.round(sum/sumAusgaben*100):0;
+      return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">'
+        +'<span style="font-size:18px">'+k.icon+'</span>'
+        +'<div style="flex:1">'
+          +'<div style="display:flex;justify-content:space-between;margin-bottom:3px">'
+            +'<span style="font-size:13px;font-weight:600">'+k.label+'</span>'
+            +'<span style="font-size:13px;font-weight:700">'+sum.toFixed(2).replace('.',',')+'&nbsp;€</span>'
+          +'</div>'
+          +'<div class="bar-track"><div class="bar-fill" style="width:'+pct+'%;background:var(--accent)"></div></div>'
+        +'</div>'
+      +'</div>';
+    }).join('');
+
+    inhalt='<div class="card"><div style="font-size:11px;color:var(--ink3);text-transform:uppercase;letter-spacing:1px;margin-bottom:12px">Monatsabschluss · '+mL(S.monat)+'</div>'
+      +'<div class="grid2">'
+        +'<div><div class="stat-label">Ausgaben gesamt</div><div class="stat-value" style="color:var(--red)">'+sumAusgaben.toFixed(2).replace('.',',')+'&nbsp;€</div></div>'
+        +'<div><div class="stat-label">Einnahmen gesamt</div><div class="stat-value" style="color:var(--green)">'+sumEinnahmen.toFixed(2).replace('.',',')+'&nbsp;€</div></div>'
+        +'<div><div class="stat-label">Netto (20% MwSt)</div><div class="stat-value">'+netto.toFixed(2).replace('.',',')+'&nbsp;€</div></div>'
+        +'<div><div class="stat-label">Vorsteuer (MwSt)</div><div class="stat-value">'+mwst.toFixed(2).replace('.',',')+'&nbsp;€</div></div>'
+      +'</div>'
+      +'<div style="font-size:10px;color:var(--ink3);margin-top:4px">Anzahl Belege: '+bfm.length+'</div>'
+    +'</div>'
+    +(katRows?'<div class="card"><div style="font-size:12px;font-weight:600;color:var(--ink2);margin-bottom:12px">Ausgaben nach Kategorie</div>'+katRows+'</div>':'')
+    +'<button class="btn-primary" onclick="exportAbschlussCSV()" style="margin-bottom:10px">📥 CSV für Steuerberater herunterladen</button>'
+    +'<div style="font-size:11px;color:var(--ink3);line-height:1.5;margin-top:8px">Die CSV-Datei enthält alle Belege des Monats mit Datum, Lieferant, Beschreibung, Kategorie, Betrag, Netto und MwSt — bereit für deinen Steuerberater.</div>';
+  }
+
+
   else if(ansicht==='einstellungen'){
     inhalt='<div class="card"><div class="section-title">⚙️ Einstellungen</div><div style="display:flex;flex-direction:column;gap:14px">'
       +'<div><div style="font-size:11px;color:var(--ink3);margin-bottom:4px">KONTO</div><div style="font-size:13px">'+(S.userId?.substring(0,8)+'…')+'</div></div>'
@@ -1585,7 +1666,7 @@ function render(){
   }
 
   app.innerHTML='<div class="header"><div class="header-left">'+logoH+'<div><div class="header-sub">'+(p?.name||'')+'</div><div class="header-title">Meine Belege</div></div></div><select class="month-select" onchange="S.monat=this.value;render()">'+mOpts+'</select></div>'
-    +'<nav class="nav"><button class="nav-btn'+(ansicht==='dashboard'?' active':'')+'" onclick="S.ansicht=\'dashboard\';render()">Übersicht</button><button class="nav-btn'+(ansicht==='belege'?' active':'')+'" onclick="S.ansicht=\'belege\';render()">Belege</button><button class="nav-btn'+(ansicht==='neu'?' active':'')+'" onclick="S.ansicht=\'neu\';render()">+ Neu</button><button class="nav-btn'+(ansicht==='tipps'?' active':'')+'" onclick="S.ansicht=\'tipps\';render()">💡 Tipps</button><button class="nav-btn'+(ansicht==='einstellungen'?' active':'')+'" onclick="S.ansicht=\'einstellungen\';render()">⚙️</button></nav>'
+    +'<nav class="nav"><button class="nav-btn'+(ansicht==='dashboard'?' active':'')+'" onclick="S.ansicht=\'dashboard\';render()">Übersicht</button><button class="nav-btn'+(ansicht==='belege'?' active':'')+'" onclick="S.ansicht=\'belege\';render()">Belege</button><button class="nav-btn'+(ansicht==='neu'?' active':'')+'" onclick="S.ansicht=\'neu\';render()">+ Neu</button><button class="nav-btn'+(ansicht==='abschluss'?' active':'')+'" onclick="S.ansicht=\'abschluss\';render()">📊 Abschluss</button><button class="nav-btn'+(ansicht==='tipps'?' active':'')+'" onclick="S.ansicht=\'tipps\';render()">💡 Tipps</button><button class="nav-btn'+(ansicht==='einstellungen'?' active':'')+'" onclick="S.ansicht=\'einstellungen\';render()">⚙️</button></nav>'
     +'<main class="main">'+inhalt+'</main>';
 
   const dz=document.getElementById('dz');
@@ -1671,7 +1752,7 @@ boot();
 // ── Wörni / Claude – sicherer Proxy ──
 async function claudeAnfrage(system, userText, maxTokens) {
   maxTokens = maxTokens || 400;
-  const res = await fetch('https://wrxlaltgtgkdomklgrlj.supabase.co/functions/v1/dynamic-processor', {
+  const res = await fetch('https://wrxlaltgtgkdomklgrlj.supabase.co/functions/v1/rapid-service', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
