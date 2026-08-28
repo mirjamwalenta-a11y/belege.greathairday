@@ -221,6 +221,7 @@ let S={
   authEmail:'',authPass:'',authName:'',authErr:'',
   draft:null,
   tipps:null,tippsDatum:null,tippsLoading:false,
+  bulkQueue:[],bulkTotal:0,bulkDone:0,bulkFehler:[],bulkModus:false,
 };
 
 function emptyM(){return{datum:'',betrag:'',art:'ausgabe',lieferant:'',kategorie:'',beschreibung:''};}
@@ -1223,6 +1224,82 @@ async function verarbeiteFile(file){
   S.loading=false;render();
 }
 
+// ── Bulk-Upload ───────────────────────────────────────────────────────────────
+// Verarbeitet mehrere Dateien sequenziell und zeigt Fortschritt.
+// Bei Einzeldatei: direkt in Prüfansicht (wie bisher).
+// Bei mehreren Dateien: alle automatisch speichern, Ergebnis-Zusammenfassung.
+async function verarbeiteFileBulk(files){
+  if(!files||!files.length)return;
+  if(files.length===1){await verarbeiteFile(files[0]);return;}
+
+  // Bulk-Modus: alle Dateien automatisch analysieren und speichern (ohne Prüf-Modal)
+  S.bulkModus=true;
+  S.bulkQueue=[...files];
+  S.bulkTotal=files.length;
+  S.bulkDone=0;
+  S.bulkFehler=[];
+  S.loading=true;
+  render();
+
+  for(const file of files){
+    try{
+      let text=file.name;
+      if(file.type==='text/plain')text=await file.text();
+      else if(file.type==='application/pdf'){
+        const pdfText=await extractPdfText(file);
+        text=pdfText||('PDF: '+file.name);
+      }else if(file.type.startsWith('image/')){
+        const ocrText=await ocrBild(file);
+        text=ocrText&&ocrText.trim().length>20?ocrText:('Bild: '+file.name);
+      }
+      // Storage Upload
+      let datei_url=null;
+      try{
+        const pfad=S.userId+'/'+Date.now()+'_'+file.name.replace(/[^a-zA-Z0-9._-]/g,'_');
+        const upR=await fetch(SB_URL+'/storage/v1/object/belege/'+pfad,{method:'POST',headers:{'apikey':SB_KEY,'Authorization':'Bearer '+S.token,'Content-Type':file.type||'application/octet-stream'},body:file});
+        if(upR.ok)datei_url=SB_URL+'/storage/v1/object/belege/'+pfad;
+      }catch(e){console.warn('Storage Upload fehlgeschlagen:',e);}
+      // QR-Code-Bereinigung (gleich wie in verarbeiteFile)
+      function bereinige(t){return t.split(/\n/).filter(z=>{const s=z.trim();if(/^_R[0-9]-/.test(s))return false;if(/AT0_\d+\/\d+/.test(s))return false;if(/T\d{2}:\d{2}:\d{2}MSR/.test(s))return false;if(/[A-Za-z0-9+\/]{30,}={0,2}$/.test(s)&&!/[äöüÄÖÜ\s,]/.test(s))return false;if((s.match(/[A-Z0-9]/g)||[]).length>s.length*0.7&&s.length>20&&!/[äöü,\s]/.test(s))return false;return true;}).join('\n');}
+      const textB=bereinige(text);
+      let res;
+      try{res=await analyzeClaude(textB,file.name);}
+      catch(e){res=analyzeLokal(textB,file.name);}
+      const kats=S.profile?.kategorien||DEFAULT_KATS;
+      const datum=res.datum||new Date().toISOString().split('T')[0];
+      const monat=datum.substring(0,7);
+      const betrag=parseFloat(res.betrag)||0;
+      if(betrag>0){
+        await insertBeleg({
+          datum,betrag,netto:res.netto||null,ust_betrag:res.ust_betrag||null,ust_satz:res.ust_satz||null,
+          art:res.art||'ausgabe',lieferant:(res.lieferant||'').substring(0,60),
+          uid_lieferant:res.uid_lieferant||null,rechnungsnummer:res.rechnungsnummer||null,
+          kategorie:res.kategorie||kats[0].id,beschreibung:(res.beschreibung||file.name).substring(0,60),
+          monat,dateiname:file.name,datei_url,
+          betrieblich:res.betrieblich||'ja',betrieblicher_anteil:res.betrieblicher_anteil||null,
+          vorsteuer_moeglich:res.vorsteuer_moeglich||'unklar',ist_anlage:res.ist_anlage||false,
+          ki_confidence:res.ki_confidence||null,steuer_ampel:res.steuer_ampel||'gelb',
+        });
+      }else{
+        S.bulkFehler.push(file.name+' (Betrag nicht erkannt)');
+      }
+    }catch(e){
+      S.bulkFehler.push(file.name+' ('+e.message+')');
+    }
+    S.bulkDone++;
+    render();
+  }
+
+  // Abschluss
+  S.loading=false;
+  S.bulkModus=false;
+  await loadBelege();
+  const ok=S.bulkTotal-S.bulkFehler.length;
+  toast(ok+' von '+S.bulkTotal+' Belegen gespeichert'+(S.bulkFehler.length?' · '+S.bulkFehler.length+' fehlgeschlagen':'')+(S.bulkFehler.length?'':'  ✓'));
+  S.bulkQueue=[];S.ansicht='belege';
+  render();
+}
+
 function updatePruefBtn(){
   const cb=document.getElementById('pruef-bestaetigt');
   const btn=document.getElementById('pruef-speichern-btn');
@@ -1585,15 +1662,25 @@ function render(){
       :'<div class="key-section"><span style="font-size:12px;color:var(--accent);font-weight:500">🔑 API-Key hinterlegt</span><button onclick="S.showKeyInput=true;render()" style="background:none;border:none;font-size:11px;color:var(--ink3);cursor:pointer">ändern</button></div>';
     const mO=kats.map(k=>'<option value="'+k.id+'"'+(S.manuell.kategorie===k.id?' selected':'')+'>'+k.icon+' '+k.label+'</option>').join('');
     inhalt=keySec
-      +(S.loading?'<div class="analyzing"><div class="analyzing-dot"></div><span style="font-size:13px;color:var(--accent);font-weight:500">Beleg wird analysiert…</span></div>':'')
+      +(S.loading&&S.bulkModus
+        // Bulk-Fortschrittsanzeige
+        ?'<div class="card" style="margin-bottom:12px">'
+          +'<div style="font-size:13px;font-weight:600;color:var(--accent);margin-bottom:8px">📦 Bulk-Upload läuft…</div>'
+          +'<div style="font-size:12px;color:var(--ink2);margin-bottom:10px">'+S.bulkDone+' von '+S.bulkTotal+' Belegen verarbeitet</div>'
+          +'<div style="background:#E8E0EF;border-radius:6px;height:8px;overflow:hidden">'
+            +'<div style="background:var(--accent);height:8px;border-radius:6px;transition:width 0.3s;width:'+(S.bulkTotal>0?Math.round(S.bulkDone/S.bulkTotal*100):0)+'%"></div>'
+          +'</div>'
+          +(S.bulkFehler.length?'<div style="font-size:11px;color:var(--red);margin-top:8px">⚠️ Fehler: '+S.bulkFehler.join(', ')+'</div>':'')
+        +'</div>'
+        :(S.loading?'<div class="analyzing"><div class="analyzing-dot"></div><span style="font-size:13px;color:var(--accent);font-weight:500">Beleg wird analysiert…</span></div>':''))
       +(S.loading
-        ?'<div class="upload-zone"><div style="font-size:32px;margin-bottom:8px">⏳</div><div style="font-size:14px;font-weight:600;color:var(--accent)">Wird analysiert…</div></div>'
+        ?'<div class="upload-zone"><div style="font-size:32px;margin-bottom:8px">⏳</div><div style="font-size:14px;font-weight:600;color:var(--accent)">'+(S.bulkModus?S.bulkDone+' / '+S.bulkTotal+' verarbeitet…':'Wird analysiert…')+'</div>'+(S.bulkModus?'<div style="font-size:11px;color:var(--ink3);margin-top:4px">Bitte warten — Belege werden automatisch gespeichert</div>':'')+'</div>'
         :'<div style="display:flex;gap:10px;margin-bottom:0">'
-         +'<div class="upload-zone" style="flex:1;min-height:90px" onclick="document.getElementById(\'fi\').click()"><div style="font-size:26px;margin-bottom:4px">📎</div><div style="font-size:13px;font-weight:600;color:var(--accent)">Hochladen</div><div style="font-size:11px;color:var(--ink3);margin-top:2px">PDF oder Foto</div></div>'
+         +'<div class="upload-zone" style="flex:1;min-height:90px" onclick="document.getElementById(\'fi\').click()"><div style="font-size:26px;margin-bottom:4px">📎</div><div style="font-size:13px;font-weight:600;color:var(--accent)">Hochladen</div><div style="font-size:11px;color:var(--ink3);margin-top:2px">PDF, Foto oder mehrere</div></div>'
          +'<div class="upload-zone" style="flex:1;min-height:90px;border-color:var(--accent);background:#F3F0F8" onclick="document.getElementById(\'fic\').click()"><div style="font-size:26px;margin-bottom:4px">📷</div><div style="font-size:13px;font-weight:600;color:var(--accent)">Scannen</div><div style="font-size:11px;color:var(--ink3);margin-top:2px">Kamera öffnen</div></div>'
          +'</div>')
-      +'<input type="file" id="fi" accept=".pdf,image/*,.txt" multiple style="display:none" onchange="Array.from(this.files).forEach(verarbeiteFile);this.value=\'\'"/>'
-      +'<input type="file" id="fic" accept="image/*" capture="environment" style="display:none" onchange="Array.from(this.files).forEach(verarbeiteFile);this.value=\'\'"/>'
+      +'<input type="file" id="fi" accept=".pdf,image/*,.txt" multiple style="display:none" onchange="verarbeiteFileBulk(Array.from(this.files));this.value=\'\'"/>'
+      +'<input type="file" id="fic" accept="image/*" capture="environment" style="display:none" onchange="verarbeiteFileBulk(Array.from(this.files));this.value=\'\'"/>'
       +'<div class="card"><div class="section-title">Oder manuell eingeben</div><div class="form-group"><input class="inp" id="manuell-datum" type="date" value="'+S.manuell.datum+'" onchange="S.manuell.datum=this.value"/><input class="inp" id="manuell-lieferant" placeholder="Lieferant" value="'+S.manuell.lieferant+'" oninput="S.manuell.lieferant=this.value"/><input class="inp" id="manuell-beschreibung" placeholder="Beschreibung *" value="'+S.manuell.beschreibung+'" oninput="S.manuell.beschreibung=this.value"/><div class="form-row"><input class="inp" id="manuell-betrag" placeholder="Betrag *" inputmode="decimal" value="'+S.manuell.betrag+'" oninput="S.manuell.betrag=this.value" style="flex:1"/><select class="inp" id="manuell-art" onchange="S.manuell.art=this.value" style="flex:1"><option value="ausgabe">Ausgabe</option><option value="einnahme">Einnahme</option></select></div><select class="inp" id="manuell-kategorie" onchange="S.manuell.kategorie=this.value">'+mO+'</select><button class="btn-primary" onclick="doManuell()">Beleg speichern</button></div></div>';
   }
 
@@ -1649,8 +1736,11 @@ function render(){
       +'<div style="font-size:10px;color:var(--ink3);margin-top:4px">Anzahl Belege: '+bfm.length+'</div>'
     +'</div>'
     +(katRows?'<div class="card"><div style="font-size:12px;font-weight:600;color:var(--ink2);margin-bottom:12px">Ausgaben nach Kategorie</div>'+katRows+'</div>':'')
-    +'<button class="btn-primary" onclick="exportAbschlussCSV()" style="margin-bottom:10px">📥 CSV für Steuerberater herunterladen</button>'
-    +'<div style="font-size:11px;color:var(--ink3);line-height:1.5;margin-top:8px">Die CSV-Datei enthält alle Belege des Monats mit Datum, Lieferant, Beschreibung, Kategorie, Betrag, Netto und MwSt — bereit für deinen Steuerberater.</div>';
+    +'<div style="display:flex;gap:9px;margin-bottom:10px">'
+      +'<button class="btn-primary" onclick="exportAbschlussCSV()" style="flex:1">📥 CSV Steuerberater</button>'
+      +'<button class="btn-primary" onclick="exportCSV()" style="flex:1;background:#3D2F4E">📥 CSV BMD</button>'
+    +'</div>'
+    +'<div style="font-size:11px;color:var(--ink3);line-height:1.5;margin-top:4px">Steuerberater: Datum, Lieferant, Brutto, Netto, MwSt. · BMD: kompaktes Format für BMD-Import.</div>';
   }
 
 
@@ -1673,7 +1763,7 @@ function render(){
   if(dz){
     dz.addEventListener('dragover',e=>{e.preventDefault();dz.classList.add('drag');});
     dz.addEventListener('dragleave',()=>dz.classList.remove('drag'));
-    dz.addEventListener('drop',e=>{e.preventDefault();dz.classList.remove('drag');Array.from(e.dataTransfer.files).forEach(verarbeiteFile);});
+    dz.addEventListener('drop',e=>{e.preventDefault();dz.classList.remove('drag');verarbeiteFileBulk(Array.from(e.dataTransfer.files));});
   }
 }
 
