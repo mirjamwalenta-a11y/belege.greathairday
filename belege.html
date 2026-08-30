@@ -944,7 +944,7 @@ Datei: ${filename}
 Belegtext:
 ${text.substring(0,3000)}`;
 
-  const r=await fetch('https://wrxlaltgtgkdomklgrlj.supabase.co/functions/v1/rapid-service',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1000,messages:[{role:'user',content:prompt}]})});
+  const r=await fetch(SB_URL+'/functions/v1/rapid-function',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+S.token},body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1000,messages:[{role:'user',content:prompt}]})});
   if(!r.ok){const e=await r.json();console.error('Claude API Fehler:',e);throw new Error(e.error?.message||'API Fehler');}
   const data=await r.json();
   const raw=data.content?.map(i=>i.text||'').join('').trim();
@@ -1009,7 +1009,7 @@ Gib NUR JSON zurück (kein Markdown, kein Kommentar, keine Erklärung):
 {"tipps":[{"titel":"kurzer Titel","text":"2-4 Sätze, konkret auf ihre Zahlen bezogen, endet mit einem Diskussionspunkt fürs Steuerberater-Gespräch"}],"hinweis":"ein Satz, dass dies keine Steuerberatung ersetzt"}
 
 Erzeuge 2-4 Tipps, priorisiert nach Relevanz für ihre aktuelle Situation (z.B. Jahreszeit, auffällige Kennzahlen). Wenn zu wenige Daten vorhanden sind, sag das ehrlich und gib stattdessen 1-2 allgemeine Hinweise, worauf sie achten könnte.`;
-  const r=await fetch('https://wrxlaltgtgkdomklgrlj.supabase.co/functions/v1/rapid-service',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1200,messages:[{role:'user',content:prompt}]})});
+  const r=await fetch(SB_URL+'/functions/v1/rapid-function',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+S.token},body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1200,messages:[{role:'user',content:prompt}]})});
   if(!r.ok){const e=await r.json();console.error('Tipps-KI Fehler:',e);throw new Error(e.error?.message||'API Fehler');}
   const data=await r.json();
   const raw=data.content?.map(i=>i.text||'').join('').trim();
@@ -1842,9 +1842,9 @@ boot();
 // ── Wörni / Claude – sicherer Proxy ──
 async function claudeAnfrage(system, userText, maxTokens) {
   maxTokens = maxTokens || 400;
-  const res = await fetch('https://wrxlaltgtgkdomklgrlj.supabase.co/functions/v1/rapid-service', {
+  const res = await fetch(SB_URL + '/functions/v1/rapid-function', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + S.token },
     body: JSON.stringify({
       model: 'claude-sonnet-4-6',
       max_tokens: maxTokens,
