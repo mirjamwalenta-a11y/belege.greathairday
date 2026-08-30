@@ -893,6 +893,19 @@ function analyzeLokal(text,filename){
   return{datum,betrag,netto,ust_betrag,ust_satz,art:'ausgabe',lieferant:lieferant.substring(0,60),uid_lieferant,rechnungsnummer,vorsteuer_moeglich,steuer_ampel,kategorie,beschreibung:filename.replace(/\.[^.]+$/,'').substring(0,60)};
 }
 // ── Claude ────────────────────────────────────────────────────────────────────
+// Bei mehrseitigen Rechnungen (z.B. Lieferantenrechnungen mit vielen Positionen)
+// steht der Rechnungsendbetrag typischerweise erst auf der LETZTEN Seite, während
+// die reinen Positions-Auflistungen davor oft schon allein mehrere tausend Zeichen
+// füllen. Ein einfaches "die ersten 3000 Zeichen" schneidet den Endbetrag dann
+// komplett ab, bevor die KI ihn je zu sehen bekommt. Deshalb: Anfang (Lieferant,
+// Rechnungsnummer, Datum) UND Ende (Summe/Endbetrag) mitschicken, nur die Mitte
+// (reine Positionslisten) bei Bedarf kürzen.
+function kuerzeBelegtext(text,maxLen=6000,endeLen=2000){
+  if(!text||text.length<=maxLen)return text;
+  const kopf=text.substring(0,maxLen-endeLen);
+  const ende=text.substring(text.length-endeLen);
+  return kopf+'\n[...gekürzt, mittlere Positionen übersprungen...]\n'+ende;
+}
 async function analyzeClaude(text,filename){
   const kats=S.profile?.kategorien||DEFAULT_KATS;
   const prompt=`Analysiere diesen österreichischen Beleg und gib NUR JSON zurück (kein Markdown, kein Kommentar, keine Erklärung).
@@ -938,7 +951,7 @@ Regeln:
 
 Datei: ${filename}
 Belegtext:
-${text.substring(0,3000)}`;
+${kuerzeBelegtext(text)}`;
 
   const r=await fetch(SB_URL+'/functions/v1/rapid-function',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+S.token},body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1000,messages:[{role:'user',content:prompt}]})});
   if(!r.ok){const e=await r.json();console.error('Claude API Fehler:',e);throw new Error(e.error?.message||'API Fehler');}
