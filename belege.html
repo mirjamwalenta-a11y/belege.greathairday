@@ -382,14 +382,25 @@ const GHD_WOERNI_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmF
 async function belegeWoerniEreignis(titel, prioritaet) {
   try {
     const gh = { 'apikey': GHD_WOERNI_KEY, 'Authorization': 'Bearer ' + GHD_WOERNI_KEY, 'Content-Type': 'application/json' };
-    // Upsert: prüfen ob schon ungelesenes Ereignis vom Typ 'beleg_neu' existiert
-    const check = await fetch(GHD_WOERNI_URL + '/rest/v1/ghd_ereignisse?app=eq.Belege&typ=eq.beleg_neu&gelesen=eq.false&select=id', { headers: gh });
+    // Upsert: prüfen ob schon ungelesenes Ereignis vom Typ 'beleg_neu' existiert.
+    // order=erstellt_am.desc: das neueste wird aktualisiert, weitere (bereits doppelt
+    // entstandene) werden unten aufgeräumt.
+    const check = await fetch(GHD_WOERNI_URL + '/rest/v1/ghd_ereignisse?app=eq.Belege&typ=eq.beleg_neu&gelesen=eq.false&select=id&order=erstellt_am.desc', { headers: gh });
     const existing = await check.json();
     if (Array.isArray(existing) && existing.length > 0) {
-      await fetch(GHD_WOERNI_URL + '/rest/v1/ghd_ereignisse?app=eq.Belege&typ=eq.beleg_neu&gelesen=eq.false', {
+      const neuestesId = existing[0].id;
+      await fetch(GHD_WOERNI_URL + '/rest/v1/ghd_ereignisse?id=eq.' + neuestesId, {
         method: 'PATCH', headers: { ...gh, 'Prefer': 'return=minimal' },
         body: JSON.stringify({ titel, prioritaet, erstellt_am: new Date().toISOString() })
       });
+      // Bereits vorhandene weitere Duplikate desselben Falls aufräumen (als gelesen markieren)
+      if (existing.length > 1) {
+        const altIds = existing.slice(1).map(e => e.id).join(',');
+        await fetch(GHD_WOERNI_URL + '/rest/v1/ghd_ereignisse?id=in.(' + altIds + ')', {
+          method: 'PATCH', headers: { ...gh, 'Prefer': 'return=minimal' },
+          body: JSON.stringify({ gelesen: true })
+        });
+      }
     } else {
       await fetch(GHD_WOERNI_URL + '/rest/v1/ghd_ereignisse', {
         method: 'POST', headers: { ...gh, 'Prefer': 'return=minimal' },
