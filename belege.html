@@ -333,12 +333,21 @@ async function insertBeleg(b){
   if(Array.isArray(d)&&d[0])S.belege.unshift({...d[0],id:String(d[0].id)});
   else await loadBelege();
   syncOsAufgaben();
-  // ── GHD-EREIGNIS ──────────────────────────────────────────────
-  const monatBelege = S.belege.filter(b => b.monat === (b.monat || getMonat())).length;
-  belegeWoerniEreignis(
-    monatBelege === 1 ? '1 neuer Beleg erfasst' : monatBelege + ' Belege diesen Monat',
-    'wann-moeglich'
-  );
+  // ── GHD-EREIGNIS (Wörni) ──────────────────────────────────────
+  // Nur bei echtem Prüfbedarf melden — nicht bei jedem normalen Beleg,
+  // sonst verdeckt die Menge das, was wirklich geprüft werden muss.
+  // Gleicher Default-Fallback wie beim Speichern (Zeile 312/315), damit die
+  // Meldung dem tatsächlich gespeicherten Zustand entspricht.
+  const steuerAmpel = b.steuer_ampel || 'gelb';
+  const vorsteuerMoeglich = b.vorsteuer_moeglich || 'unklar';
+  if (steuerAmpel === 'rot' || steuerAmpel === 'gelb' || vorsteuerMoeglich === 'unklar') {
+    const grund = steuerAmpel === 'rot'
+      ? 'Beleg unvollständig – Pflichtangaben fehlen'
+      : steuerAmpel === 'gelb'
+        ? 'Beleg unsicher erkannt – bitte prüfen'
+        : 'Beleg: Vorsteuerabzug unklar';
+    belegeWoerniEreignis(grund, 'heute');
+  }
 }
 async function updateBelegDB(id,data){
   const r=await sbPatch('/rest/v1/belege_neu?id=eq.'+id+'&user_id=eq.'+S.userId,data,S.token);
