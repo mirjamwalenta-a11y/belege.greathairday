@@ -333,12 +333,33 @@ async function insertBeleg(b){
   if(Array.isArray(d)&&d[0])S.belege.unshift({...d[0],id:String(d[0].id)});
   else await loadBelege();
   syncOsAufgaben();
-  // ── GHD-EREIGNIS ──────────────────────────────────────────────
-  const monatBelege = S.belege.filter(b => b.monat === (b.monat || getMonat())).length;
-  belegeWoerniEreignis(
-    monatBelege === 1 ? '1 neuer Beleg erfasst' : monatBelege + ' Belege diesen Monat',
-    'wann-moeglich'
-  );
+  // ── GHD-EREIGNIS: nur bei echtem Prüfbedarf, nicht bei jedem normalen Beleg ──
+  meldeBelegPruefbedarf();
+}
+
+// Prüft den aktuellen Monat auf offene Prüfpunkte (Pflichtangaben fehlen / Vorsteuer unklar)
+// und meldet ein Wörni-Signal NUR dann. Vollständige, unproblematische Belege (Ampel grün,
+// Vorsteuer geklärt) erzeugen bewusst kein Signal — Führungsrelevanz statt Datenfülle.
+function istMonatsendeNah(){
+  const heute=new Date();
+  const letzterTag=new Date(heute.getFullYear(),heute.getMonth()+1,0).getDate();
+  return (letzterTag-heute.getDate())<=3;
+}
+function meldeBelegPruefbedarf(){
+  const monat=getMonat();
+  const belegeDiesenMonat=S.belege.filter(b=>b.monat===monat);
+  const rotAnzahl=belegeDiesenMonat.filter(b=>b.steuer_ampel==='rot').length;
+  const unklarAnzahl=belegeDiesenMonat.filter(b=>b.vorsteuer_moeglich==='unklar').length;
+  if(rotAnzahl===0&&unklarAnzahl===0) return; // alles klar — kein Signal
+
+  const teile=[];
+  if(rotAnzahl>0) teile.push(rotAnzahl+' mit fehlenden Pflichtangaben');
+  if(unklarAnzahl>0) teile.push(unklarAnzahl+' mit unklarer Vorsteuer');
+  const titel='Belege prüfen: '+teile.join(', ');
+
+  let prioritaet=rotAnzahl>0?'heute':'diese-woche';
+  if(istMonatsendeNah()) prioritaet='heute'; // Monatsabschluss naht und es ist noch etwas unklar
+  belegeWoerniEreignis(titel, prioritaet);
 }
 async function updateBelegDB(id,data){
   const r=await sbPatch('/rest/v1/belege_neu?id=eq.'+id+'&user_id=eq.'+S.userId,data,S.token);
