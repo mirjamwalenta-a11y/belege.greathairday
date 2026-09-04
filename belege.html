@@ -221,6 +221,7 @@ let S={
   draft:null,
   tipps:null,tippsDatum:null,tippsLoading:false,
   bulkQueue:[],bulkTotal:0,bulkDone:0,bulkFehler:[],bulkModus:false,
+  filterGeschaetzt:false,
 };
 
 function emptyM(){return{datum:'',betrag:'',art:'ausgabe',lieferant:'',kategorie:'',beschreibung:''};}
@@ -1419,15 +1420,43 @@ function exportCSV(){
   toast('BMD-CSV exportiert ✓');
 }
 
+// Ein Beleg gilt als "MwSt geschätzt", wenn für ihn weder netto, noch ust_betrag,
+// noch ust_satz gespeichert ist (typischerweise alte Belege aus der Zeit vor dieser
+// Erfassung). Eigene Hilfsfunktion, damit Export UND Belege-Liste dieselbe Bedingung
+// verwenden und nicht auseinanderlaufen können.
+function istMwstGeschaetzt(b){
+  return b.art==='ausgabe'&&b.netto==null&&b.ust_betrag==null&&b.ust_satz==null;
+}
+// Ermittelt Netto/MwSt für den Steuerberater-Export aus den pro Beleg bereits gespeicherten
+// Feldern (netto, ust_betrag, ust_satz), statt pauschal einen MwSt-Satz zu unterstellen.
+// Priorität: 1) netto & ust_betrag direkt übernehmen  2) nur netto vorhanden → MwSt ableiten
+// 3) nur ust_betrag vorhanden → Netto ableiten  4) nur ust_satz vorhanden → daraus rechnen
+// 5) Fallback für alte Belege ganz ohne Steuerfelder (istMwstGeschaetzt=true): bisheriges
+//    Verhalten (20% unterstellt), damit der Export für diese Altfälle nicht plötzlich
+//    leer/kaputt aussieht, aber als geschaetzt=true markiert bleibt.
+function nettoMwstFuerBeleg(b){
+  const brutto=b.betrag||0;
+  if(b.art!=='ausgabe')return{netto:brutto,mwst:0,geschaetzt:false};
+  if(b.netto!=null&&b.ust_betrag!=null)return{netto:b.netto,mwst:b.ust_betrag,geschaetzt:false};
+  if(b.netto!=null)return{netto:b.netto,mwst:Math.round((brutto-b.netto)*100)/100,geschaetzt:false};
+  if(b.ust_betrag!=null)return{netto:Math.round((brutto-b.ust_betrag)*100)/100,mwst:b.ust_betrag,geschaetzt:false};
+  if(b.ust_satz!=null){
+    const netto=Math.round((brutto/(1+b.ust_satz/100))*100)/100;
+    return{netto,mwst:Math.round((brutto-netto)*100)/100,geschaetzt:false};
+  }
+  const netto=brutto/1.2;
+  return{netto,mwst:brutto-netto,geschaetzt:istMwstGeschaetzt(b)};
+}
 function exportAbschlussCSV(){
   const bfm=S.belege.filter(b=>b.monat===S.monat);
   if(!bfm.length){toast('Keine Belege in diesem Monat','err');return;}
   const kats=S.profile?.kategorien||DEFAULT_KATS;
-  const kopf='Datum;Lieferant;Beschreibung;Kategorie;Art;Brutto (EUR);Netto (EUR);MwSt (EUR)\n';
+  // Hinweis-Spalte nur in diesem Export: markiert Belege, bei denen mangels gespeicherter
+  // Steuerfelder (netto/ust_betrag/ust_satz) der 20%-Fallback verwendet werden musste.
+  const kopf='Datum;Lieferant;Beschreibung;Kategorie;Art;Brutto (EUR);Netto (EUR);MwSt (EUR);Hinweis\n';
   const zeilen=bfm.map(b=>{
     const brutto=b.betrag||0;
-    const netto=b.art==='ausgabe'?brutto/1.2:brutto;
-    const mwst=b.art==='ausgabe'?brutto-netto:0;
+    const{netto,mwst,geschaetzt}=nettoMwstFuerBeleg(b);
     const kat=kats.find(k=>k.id===b.kategorie);
     return [
       b.datum||'',
@@ -1437,14 +1466,19 @@ function exportAbschlussCSV(){
       b.art==='ausgabe'?'Ausgabe':'Einnahme',
       brutto.toFixed(2).replace('.',','),
       netto.toFixed(2).replace('.',','),
-      mwst.toFixed(2).replace('.',',')
+      mwst.toFixed(2).replace('.',','),
+      geschaetzt?'MwSt geschätzt (20% angenommen, bitte prüfen)':''
     ].join(';');
   }).join('\n');
-  // Zusammenfassung
-  const sumBrutto=bfm.filter(b=>b.art==='ausgabe').reduce((s,b)=>s+(b.betrag||0),0);
-  const sumNetto=sumBrutto/1.2;
-  const sumMwSt=sumBrutto-sumNetto;
-  const zusammen='\n;;GESAMT AUSGABEN;;Ausgabe;'+sumBrutto.toFixed(2).replace('.',',')+';'+sumNetto.toFixed(2).replace('.',',')+';'+sumMwSt.toFixed(2).replace('.',',');
+  // Zusammenfassung: Summe je Beleg mit denselben Werten wie in den Zeilen bilden,
+  // statt aus der Brutto-Gesamtsumme pauschal 20% herauszurechnen.
+  const ausgaben=bfm.filter(b=>b.art==='ausgabe');
+  const sumBrutto=ausgaben.reduce((s,b)=>s+(b.betrag||0),0);
+  const sumNetto=ausgaben.reduce((s,b)=>s+nettoMwstFuerBeleg(b).netto,0);
+  const sumMwSt=ausgaben.reduce((s,b)=>s+nettoMwstFuerBeleg(b).mwst,0);
+  const geschaetztAnzahl=ausgaben.filter(b=>nettoMwstFuerBeleg(b).geschaetzt).length;
+  const hinweisSumme=geschaetztAnzahl>0?(geschaetztAnzahl+' Beleg(e) mit geschätzter MwSt'):'';
+  const zusammen='\n;;GESAMT AUSGABEN;;Ausgabe;'+sumBrutto.toFixed(2).replace('.',',')+';'+sumNetto.toFixed(2).replace('.',',')+';'+sumMwSt.toFixed(2).replace('.',',')+';'+hinweisSumme;
   const bom='\uFEFF';
   const blob=new Blob([bom+kopf+zeilen+zusammen],{type:'text/csv;charset=utf-8;'});
   const a=document.createElement('a');
@@ -1686,15 +1720,26 @@ function render(){
   }
 
   else if(ansicht==='belege'){
-    const items=bfm.map(b=>{
+    // Nachbearbeitungs-Filter: sammelt Belege mit geschätzter MwSt monatsübergreifend,
+    // damit man sie nicht Monat für Monat einzeln suchen muss. Nur sichtbar/aktivierbar,
+    // wenn es überhaupt welche gibt.
+    const geschaetzteAlle=S.belege.filter(istMwstGeschaetzt);
+    const nurGeschaetzt=!!S.filterGeschaetzt&&geschaetzteAlle.length>0;
+    const listBasis=nurGeschaetzt?geschaetzteAlle:bfm;
+    const items=listBasis.map(b=>{
       const k=kk(b.kategorie);
       if(String(S.editId)===String(b.id)){
         const eO=kats.map(k=>'<option value="'+k.id+'"'+(k.id===S.editData.kategorie?' selected':'')+'>'+k.icon+' '+k.label+'</option>').join('');
-        return'<div class="beleg-item"><div class="edit-form"><input class="inp" type="date" value="'+(S.editData.datum||'')+'" onchange="S.editData.datum=this.value"/><input class="inp" placeholder="Lieferant" value="'+(S.editData.lieferant||'')+'" oninput="S.editData.lieferant=this.value"/><input class="inp" placeholder="Beschreibung" value="'+(S.editData.beschreibung||'')+'" oninput="S.editData.beschreibung=this.value"/><div class="form-row"><input class="inp" placeholder="Betrag" value="'+(S.editData.betrag||'')+'" oninput="S.editData.betrag=this.value" style="flex:1"/><select class="inp" onchange="S.editData.art=this.value" style="flex:1"><option value="ausgabe"'+(S.editData.art==='ausgabe'?' selected':'')+'>Ausgabe</option><option value="einnahme"'+(S.editData.art==='einnahme'?' selected':'')+'>Einnahme</option></select></div><select class="inp" onchange="S.editData.kategorie=this.value">'+eO+'</select><div class="edit-actions"><button class="btn-save" onclick="doEdit()">Speichern</button><button class="btn-cancel" onclick="S.editId=null;render()">Abbrechen</button></div></div></div>';
+        // Zusatzfeld nur für Belege mit geschätzter MwSt: USt-Satz nachtragen, damit der
+        // Beleg beim Speichern aus der Ausnahmeliste herausfällt.
+        const ustNachtrag=istMwstGeschaetzt(b)?('<div style="font-size:11px;color:var(--red);margin-top:2px">⚠️ MwSt bisher geschätzt – USt-Satz nachtragen:</div><select class="inp" onchange="S.editData.ust_satz=this.value"><option value="">USt-Satz wählen…</option><option value="20">20 %</option><option value="10">10 %</option><option value="13">13 %</option><option value="0">0 % / befreit</option></select>'):'';
+        return'<div class="beleg-item"><div class="edit-form"><input class="inp" type="date" value="'+(S.editData.datum||'')+'" onchange="S.editData.datum=this.value"/><input class="inp" placeholder="Lieferant" value="'+(S.editData.lieferant||'')+'" oninput="S.editData.lieferant=this.value"/><input class="inp" placeholder="Beschreibung" value="'+(S.editData.beschreibung||'')+'" oninput="S.editData.beschreibung=this.value"/><div class="form-row"><input class="inp" placeholder="Betrag" value="'+(S.editData.betrag||'')+'" oninput="S.editData.betrag=this.value" style="flex:1"/><select class="inp" onchange="S.editData.art=this.value" style="flex:1"><option value="ausgabe"'+(S.editData.art==='ausgabe'?' selected':'')+'>Ausgabe</option><option value="einnahme"'+(S.editData.art==='einnahme'?' selected':'')+'>Einnahme</option></select></div><select class="inp" onchange="S.editData.kategorie=this.value">'+eO+'</select>'+ustNachtrag+'<div class="edit-actions"><button class="btn-save" onclick="doEdit()">Speichern</button><button class="btn-cancel" onclick="S.editId=null;render()">Abbrechen</button></div></div></div>';
       }
       return'<div class="beleg-item"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px"><div style="flex:1;min-width:0"><div><span class="beleg-tag" style="background:#7C6B8A1A;color:#7C6B8A">'+(k?.icon||'📦')+' '+(k?.label||'')+'</span><span style="font-size:10px;color:var(--ink3);margin-left:4px">'+b.datum+'</span></div><div class="beleg-name">'+(b.lieferant||'—')+'</div><div class="beleg-desc">'+(b.beschreibung||'')+'</div></div><div class="beleg-amount" style="color:'+(b.art==='ausgabe'?'var(--red)':'var(--green)')+'">'+(b.art==='ausgabe'?'−':'+')+eur(b.betrag||0)+'</div></div><div class="beleg-actions"><button class="btn-sm btn-edit" onclick="S.editId=\''+b.id+'\';S.editData=Object.assign({},S.belege.find(x=>x.id===\''+b.id+'\'));render()">✏️ Bearbeiten</button><button class="btn-sm btn-del" onclick="if(confirm(\'Löschen?\'))deleteBelegDB(\''+b.id+'\').then(()=>render()).catch(e=>toast(\'Fehler: \'+e.message,\'err\'))">🗑️ Löschen</button></div></div>';
     }).join('');
-    inhalt='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-size:13px;color:var(--ink3)">'+bfm.length+' Belege · '+mL(S.monat)+'</div>'+(bfm.length?'<button class="btn-outline" onclick="exportCSV()">📤 BMD-CSV</button>':'')+'</div>'+(bfm.length===0?'<div class="empty"><div class="empty-icon">🗂️</div><div style="font-size:14px">Keine Belege in diesem Monat.</div></div>':items);
+    const hinweisChip=geschaetzteAlle.length?('<div onclick="S.filterGeschaetzt='+(!nurGeschaetzt)+';render()" style="background:#FEF3C7;color:#92400E;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:600;margin-bottom:12px;cursor:pointer">'+(nurGeschaetzt?'← zurück zu '+mL(S.monat):'⚠️ '+geschaetzteAlle.length+' Beleg(e) mit geschätzter MwSt · zum Nachbearbeiten anzeigen')+'</div>'):'';
+    const kopfzeile='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-size:13px;color:var(--ink3)">'+listBasis.length+' Belege'+(nurGeschaetzt?' · geschätzte MwSt (alle Monate)':' · '+mL(S.monat))+'</div>'+(listBasis.length&&!nurGeschaetzt?'<button class="btn-outline" onclick="exportCSV()">📤 BMD-CSV</button>':'')+'</div>';
+    inhalt=hinweisChip+kopfzeile+(listBasis.length===0?'<div class="empty"><div class="empty-icon">🗂️</div><div style="font-size:14px">'+(nurGeschaetzt?'Keine Belege mit geschätzter MwSt mehr.':'Keine Belege in diesem Monat.')+'</div></div>':items);
   }
 
   else if(ansicht==='neu'){
@@ -1861,8 +1906,20 @@ async function doManuell(){
 }
 async function doEdit(){
   const d=S.editData;
+  const payload={datum:d.datum,betrag:parseFloat(String(d.betrag).replace(',','.')),art:d.art,lieferant:d.lieferant,kategorie:d.kategorie,beschreibung:d.beschreibung};
+  // Nur wenn der Beleg vor dem Bearbeiten als "MwSt geschätzt" galt und ein USt-Satz
+  // nachgetragen wurde: netto/ust_betrag/ust_satz berechnen und mitspeichern, damit der
+  // Beleg danach aus der Ausnahmeliste herausfällt. Normale Belege bleiben unangetastet.
+  const original=S.belege.find(x=>String(x.id)===String(S.editId));
+  if(original&&istMwstGeschaetzt(original)&&d.ust_satz){
+    const satz=parseFloat(d.ust_satz);
+    const netto=Math.round((payload.betrag/(1+satz/100))*100)/100;
+    payload.ust_satz=satz;
+    payload.netto=netto;
+    payload.ust_betrag=Math.round((payload.betrag-netto)*100)/100;
+  }
   try{
-    await updateBelegDB(S.editId,{datum:d.datum,betrag:parseFloat(String(d.betrag).replace(',','.')),art:d.art,lieferant:d.lieferant,kategorie:d.kategorie,beschreibung:d.beschreibung});
+    await updateBelegDB(S.editId,payload);
     S.editId=null;render();toast('Beleg aktualisiert ✓');
   }catch(e){toast('Fehler: '+e.message,'err');}
 }
