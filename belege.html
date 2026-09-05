@@ -263,7 +263,7 @@ async function loadProfile(){
   return false;
 }
 async function upsertProfile(data){
-  const body={id:S.userId,name:data.name,pin:data.pin,emoji:data.emoji,kategorien:data.kategorien};
+  const body={id:S.userId,name:data.name,pin_hash:data.pin_hash,pin:data.pin??null,emoji:data.emoji,kategorien:data.kategorien};
   const r=await fetch(SB_URL+'/rest/v1/profiles',{
     method:'POST',
     headers:{
@@ -497,11 +497,31 @@ async function afterLogin(){
 }
 
 // ── PIN ────────────────────────────────────────────────────────────────────────
-function pinPress(d){
+async function hashPin(pin){
+  const enc=new TextEncoder().encode(pin+':'+S.userId);
+  const buf=await crypto.subtle.digest('SHA-256',enc);
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+async function pinPress(d){
   if(S.pinInput.length>=4)return;
   S.pinInput+=d;
   if(S.pinInput.length===4){
-    if(S.pinInput===S.profile?.pin){
+    const entered=S.pinInput;
+    let ok=false;
+    if(S.profile?.pin_hash){
+      ok=(await hashPin(entered))===S.profile.pin_hash;
+    }else if(S.profile?.pin){
+      // Altbestand ohne Hash: einmalig prüfen und danach automatisch auf Hash umstellen
+      ok=entered===S.profile.pin;
+      if(ok){
+        try{
+          const neuerHash=await hashPin(entered);
+          await upsertProfile({...S.profile,pin_hash:neuerHash,pin:null});
+          S.profile.pin_hash=neuerHash;S.profile.pin=null;
+        }catch(e){/* Migration nicht kritisch, Login trotzdem fortsetzen */}
+      }
+    }
+    if(ok){
       S.screen='app';S.pinError='';
       sessionStorage.setItem('pin_ok',S.userId);
       loadBelege().then(()=>render());
@@ -527,7 +547,8 @@ async function saveSetup(){
   if(!d.name.trim()){toast('Bitte Name eingeben','err');return;}
   if(!d.pin||d.pin.length<4){toast('PIN muss 4 Ziffern haben','err');return;}
   const kats=d.kategorien.filter(k=>k.label.trim());
-  const profileData={name:d.name.trim(),logo_url:d.logo||'',emoji:d.emoji||'💼',pin:d.pin,kategorien:kats};
+  const pinHash=await hashPin(d.pin);
+  const profileData={name:d.name.trim(),logo_url:d.logo||'',emoji:d.emoji||'💼',pin_hash:pinHash,pin:null,kategorien:kats};
   try{
     await upsertProfile(profileData);
   }catch(e){
