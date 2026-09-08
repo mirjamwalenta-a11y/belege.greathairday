@@ -1273,7 +1273,21 @@ async function verarbeiteFile(file){
     }
     const textBereinigt=bereinigeFuerAnalyse(text);
     let res,quelle='ki',kiFehler=null;
-    try{res=await analyzeClaude(textBereinigt,file.name);}
+    try{
+      res=await analyzeClaude(textBereinigt,file.name);
+      // Gezielter Steuerfeld-Fallback: Claude war erfolgreich, hat aber keine MwSt-Angaben
+      // gefunden. Die lokale Regex-Erkennung bekommt denselben Text oft trotzdem sauber
+      // ausgewertet — deshalb hier NUR netto/ust_betrag/ust_satz nachziehen, alle anderen
+      // von Claude erkannten Felder bleiben unverändert.
+      if(res.netto==null&&res.ust_betrag==null&&res.ust_satz==null){
+        const lokal=analyzeLokal(textBereinigt,file.name);
+        if(lokal.netto!=null||lokal.ust_betrag!=null||lokal.ust_satz!=null){
+          res.netto=lokal.netto;
+          res.ust_betrag=lokal.ust_betrag;
+          res.ust_satz=lokal.ust_satz;
+        }
+      }
+    }
     catch(e){
       // Kein API-Key oder Fehler → lokale Analyse aus PDF-Text
       quelle='lokal';
@@ -1358,7 +1372,20 @@ async function verarbeiteFileBulk(files){
       function bereinige(t){return t.split(/\n/).filter(z=>{const s=z.trim();if(/^_R[0-9]-/.test(s))return false;if(/AT0_\d+\/\d+/.test(s))return false;if(/T\d{2}:\d{2}:\d{2}MSR/.test(s))return false;if(/[A-Za-z0-9+\/]{30,}={0,2}$/.test(s)&&!/[äöüÄÖÜ\s,]/.test(s))return false;if((s.match(/[A-Z0-9]/g)||[]).length>s.length*0.7&&s.length>20&&!/[äöü,\s]/.test(s))return false;return true;}).join('\n');}
       const textB=bereinige(text);
       let res;
-      try{res=await analyzeClaude(textB,file.name);}
+      try{
+        res=await analyzeClaude(textB,file.name);
+        // Gleicher gezielter Steuerfeld-Fallback wie im Einzel-Upload (verarbeiteFile):
+        // Claude erfolgreich, aber keine MwSt-Angaben gefunden → nur netto/ust_betrag/ust_satz
+        // aus der lokalen Analyse nachziehen, alle übrigen Claude-Felder unverändert lassen.
+        if(res.netto==null&&res.ust_betrag==null&&res.ust_satz==null){
+          const lokal=analyzeLokal(textB,file.name);
+          if(lokal.netto!=null||lokal.ust_betrag!=null||lokal.ust_satz!=null){
+            res.netto=lokal.netto;
+            res.ust_betrag=lokal.ust_betrag;
+            res.ust_satz=lokal.ust_satz;
+          }
+        }
+      }
       catch(e){res=analyzeLokal(textB,file.name);}
       const kats=S.profile?.kategorien||DEFAULT_KATS;
       const datum=res.datum||new Date().toISOString().split('T')[0];
@@ -1496,6 +1523,23 @@ function exportCSV(){
 function istMwstGeschaetzt(b){
   return b.art==='ausgabe'&&b.netto==null&&b.ust_betrag==null&&b.ust_satz==null;
 }
+// Markiert Belege, die vor dem Monatsabschluss noch manuelle Prüfung brauchen.
+// Bewusst NUR aus bereits vorhandenen Signalen abgeleitet, keine neue Prüf-Logik:
+// MwSt geschätzt, Vorsteuer unklar, oder Steuer-Ampel rot (Pflichtangaben fehlen).
+// Zahlungsdatum ist hier absichtlich KEIN Kriterium (siehe Kommentar bei zahlungsdatum-Extraktion).
+// pruefGruende() liefert die tatsächlich zutreffenden Gründe als Liste, damit der Marker
+// den konkreten Auslöser zeigt statt einer pauschalen Sammelformulierung.
+function pruefGruende(b){
+  if(!b)return[];
+  const g=[];
+  if(istMwstGeschaetzt(b))g.push('MwSt geschätzt');
+  if(b.vorsteuer_moeglich==='unklar')g.push('Vorsteuer unklar');
+  if(b.steuer_ampel==='rot')g.push('Pflichtangaben fehlen');
+  return g;
+}
+function brauchtPruefung(b){
+  return pruefGruende(b).length>0;
+}
 // Ermittelt Netto/MwSt für den Steuerberater-Export aus den pro Beleg bereits gespeicherten
 // Feldern (netto, ust_betrag, ust_satz), statt pauschal einen MwSt-Satz zu unterstellen.
 // Priorität: 1) netto & ust_betrag direkt übernehmen  2) nur netto vorhanden → MwSt ableiten
@@ -1627,6 +1671,7 @@ function renderPruefModal(){
     +(p.quelle==='lokal'?'<div style="background:#FEE2E2;color:#991B1B;border-radius:8px;padding:10px 12px;font-size:12px;margin-bottom:10px;border:1px solid #FCA5A5"><strong>&#9888;&#65039; KI-Erkennung nicht verfügbar</strong><br>Grund: '+String(p.kiFehler||'unbekannt').replace(/</g,'&lt;')+'<br>Datum, Betrag, Netto und MwSt wurden nur mit einfachen Textmustern geschätzt – bitte besonders sorgfältig prüfen.</div>':'')
     +(pruefNichtRechnung(p.pdfText||'',p.dateiname||'')?'<div style="background:#FFF3CD;color:#856404;border-radius:8px;padding:10px 12px;font-size:12px;margin-bottom:10px;border:1px solid #F0C040"><strong>&#9888;&#65039; Kein buchungsrelevanter Beleg?</strong><br>Dieses Dokument wirkt m\u00F6glicherweise wie ein Lieferschein, Avis, Mahnung oder Bestellbest\u00E4tigung. Bitte vor dem Speichern pr\u00FCfen.</div>':'')
     +(pruefDublette(p.res.lieferant,p.res.datum,p.res.betrag,p.dateiname)?'<div style="background:#FEE2E2;color:#991B1B;border-radius:8px;padding:10px 12px;font-size:12px;margin-bottom:10px;border:1px solid #FCA5A5"><strong>&#9888;&#65039; M\u00F6gliche Dublette</strong><br>Dieser Beleg k\u00F6nnte bereits erfasst worden sein. Bitte vor dem Speichern Lieferant, Datum, Betrag und Belegnummer pr\u00FCfen.</div>':'')
+    +(brauchtPruefung(p.res)?'<div style="background:#FEE2E2;color:#991B1B;border-radius:8px;padding:10px 12px;font-size:12px;margin-bottom:10px;border:1px solid #FCA5A5"><strong>\u{1F536} Vor Abschluss pr\u00FCfen \u2014 '+pruefGruende(p.res).join(', ')+'</strong><br>Dieser Beleg ist noch nicht sauber genug f\u00FCr den Monatsabschluss \u2013 bitte manuell pr\u00FCfen.</div>':'')
     +'<label class="pruef-label">&#x1F4C5; Datum</label>'
     +'<input class="inp" id="pruef-datum" type="date" value="'+p.res.datum+'"/>'
     +'<label class="pruef-label" style="display:flex;align-items:center;gap:6px">'
@@ -1807,7 +1852,8 @@ function render(){
       }
       const gwgBadge=istGwgKandidat(b)?'<span class="beleg-tag" style="background:#DCEEFA;color:#1D5C8A;margin-left:4px" title="Anschaffung im typischen GWG-Grenzbereich (grob 400–1500 €) — noch nicht als Anlage markiert">🔵 evtl. Anlagegut</span>':'';
       const bewirtBadge=(b.art==='ausgabe'&&istBewirtung(b.lieferant,b.beschreibung)&&!b.anlass)?'<span class="beleg-tag" style="background:#FFF3CD;color:#856404;margin-left:4px" title="Anlass/Teilnehmer für den Bewirtungsnachweis fehlen noch">🍽️ Anlass fehlt</span>':'';
-      return'<div class="beleg-item"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px"><div style="flex:1;min-width:0"><div><span class="beleg-tag" style="background:#7C6B8A1A;color:#7C6B8A">'+(k?.icon||'📦')+' '+(k?.label||'')+'</span><span style="font-size:10px;color:var(--ink3);margin-left:4px">'+b.datum+'</span>'+gwgBadge+bewirtBadge+'</div><div class="beleg-name">'+(b.lieferant||'—')+'</div><div class="beleg-desc">'+(b.beschreibung||'')+(b.anlass?'<br><span style="color:var(--ink3)">Anlass: '+b.anlass+(b.teilnehmer?' · '+b.teilnehmer:'')+'</span>':'')+'</div></div><div class="beleg-amount" style="color:'+(b.art==='ausgabe'?'var(--red)':'var(--green)')+'">'+(b.art==='ausgabe'?'−':'+')+eur(b.betrag||0)+'</div></div><div class="beleg-actions"><button class="btn-sm btn-edit" onclick="S.editId=\''+b.id+'\';S.editData=Object.assign({},S.belege.find(x=>x.id===\''+b.id+'\'));render()">✏️ Bearbeiten</button><button class="btn-sm btn-del" onclick="if(confirm(\'Löschen?\'))deleteBelegDB(\''+b.id+'\').then(()=>render()).catch(e=>toast(\'Fehler: \'+e.message,\'err\'))">🗑️ Löschen</button></div></div>';
+      const pruefBadge=brauchtPruefung(b)?'<span class="beleg-tag" style="background:#FEE2E2;color:#991B1B;margin-left:4px" title="Noch nicht sauber genug für den Abschluss – manuell prüfen">🔶 Vor Abschluss prüfen — '+pruefGruende(b).join(', ')+'</span>':'';
+      return'<div class="beleg-item"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px"><div style="flex:1;min-width:0"><div><span class="beleg-tag" style="background:#7C6B8A1A;color:#7C6B8A">'+(k?.icon||'📦')+' '+(k?.label||'')+'</span><span style="font-size:10px;color:var(--ink3);margin-left:4px">'+b.datum+'</span>'+gwgBadge+bewirtBadge+pruefBadge+'</div><div class="beleg-name">'+(b.lieferant||'—')+'</div><div class="beleg-desc">'+(b.beschreibung||'')+(b.anlass?'<br><span style="color:var(--ink3)">Anlass: '+b.anlass+(b.teilnehmer?' · '+b.teilnehmer:'')+'</span>':'')+'</div></div><div class="beleg-amount" style="color:'+(b.art==='ausgabe'?'var(--red)':'var(--green)')+'">'+(b.art==='ausgabe'?'−':'+')+eur(b.betrag||0)+'</div></div><div class="beleg-actions"><button class="btn-sm btn-edit" onclick="S.editId=\''+b.id+'\';S.editData=Object.assign({},S.belege.find(x=>x.id===\''+b.id+'\'));render()">✏️ Bearbeiten</button><button class="btn-sm btn-del" onclick="if(confirm(\'Löschen?\'))deleteBelegDB(\''+b.id+'\').then(()=>render()).catch(e=>toast(\'Fehler: \'+e.message,\'err\'))">🗑️ Löschen</button></div></div>';
     }).join('');
     const hinweisChip=geschaetzteAlle.length?('<div onclick="S.filterGeschaetzt='+(!nurGeschaetzt)+';render()" style="background:#FEF3C7;color:#92400E;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:600;margin-bottom:12px;cursor:pointer">'+(nurGeschaetzt?'← zurück zu '+mL(S.monat):'⚠️ '+geschaetzteAlle.length+' Beleg(e) mit geschätzter MwSt · zum Nachbearbeiten anzeigen')+'</div>'):'';
     const kopfzeile='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-size:13px;color:var(--ink3)">'+listBasis.length+' Belege'+(nurGeschaetzt?' · geschätzte MwSt (alle Monate)':' · '+mL(S.monat))+'</div>'+(listBasis.length&&!nurGeschaetzt?'<button class="btn-outline" onclick="exportCSV()">📤 BMD-CSV</button>':'')+'</div>';
