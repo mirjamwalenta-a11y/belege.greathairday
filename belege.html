@@ -312,6 +312,7 @@ async function insertBeleg(b){
   const payload={
     user_id:S.userId,
     datum:b.datum,
+    zahlungsdatum:b.zahlungsdatum||null,
     betrag:b.betrag,
     netto:b.netto||null,
     ust_betrag:b.ust_betrag||null,
@@ -801,6 +802,14 @@ function analyzeLokal(text,filename){
     for(let i=allD.length-1;i>=0;i--){const d=parseDatum(allD[i][0]);if(d){datum=d;datumGefunden=true;break;}}
   }
 
+  // ── ZAHLUNGSDATUM: bewusst GETRENNT vom Belegdatum oben ───────────────────
+  // Nur aus expliziten Zahlungs-Angaben ("bezahlt am", "Zahlungsdatum", "Valuta") füllen —
+  // NIEMALS aus "Rechnungsdatum"/"Ausstellungsdatum"/"Datum"/"vom" ableiten. Bleibt null,
+  // wenn der Beleg keine eigene Zahlungsangabe ausweist (kein Rateraten über Fallbacks).
+  let zahlungsdatum=null;
+  const zahlungsdatumM=text.match(new RegExp('(?:bezahlt\\s+am|zahlungsdatum|zahldatum|valuta(?:datum)?)\\s*:?\\s{0,4}('+DATUM_PATTERN+')','i'));
+  if(zahlungsdatumM){const zd=parseDatum(zahlungsdatumM[1]);if(zd)zahlungsdatum=zd;}
+
   // ── LIEFERANT: intelligent aus Text extrahieren ───────────────────────────
   function extrahiereLieferant(text, filename){
     const zeilen=text.split(/\n/).map(z=>z.trim());
@@ -963,7 +972,7 @@ function analyzeLokal(text,filename){
     steuer_ampel='rot';
   }
 
-  return{datum,betrag,netto,ust_betrag,ust_satz,art:'ausgabe',lieferant:lieferant.substring(0,60),uid_lieferant,rechnungsnummer,vorsteuer_moeglich,steuer_ampel,kategorie,beschreibung:filename.replace(/\.[^.]+$/,'').substring(0,60)};
+  return{datum,zahlungsdatum,betrag,netto,ust_betrag,ust_satz,art:'ausgabe',lieferant:lieferant.substring(0,60),uid_lieferant,rechnungsnummer,vorsteuer_moeglich,steuer_ampel,kategorie,beschreibung:filename.replace(/\.[^.]+$/,'').substring(0,60)};
 }
 // ── Claude ────────────────────────────────────────────────────────────────────
 // Bei mehrseitigen Rechnungen (z.B. Lieferantenrechnungen mit vielen Positionen)
@@ -986,6 +995,7 @@ async function analyzeClaude(text,filename){
 Rückgabeformat:
 {
   "datum": "YYYY-MM-DD",
+  "zahlungsdatum": "YYYY-MM-DD" oder null,
   "betrag": Zahl,
   "netto": Zahl oder null,
   "ust_betrag": Zahl oder null,
@@ -1010,6 +1020,7 @@ Regeln:
 - ust_betrag: der USt-Betrag laut Beleg, oder null wenn nicht erkennbar
 - ust_satz: 20 / 10 / 13 / 0 – nur wenn eindeutig erkennbar, sonst null
 - datum: Belegdatum/Rechnungsdatum, nicht Lieferdatum oder Druckdatum
+- zahlungsdatum: NUR setzen, wenn der Beleg ein eigenes, explizites Zahlungsdatum ausweist (z.B. "bezahlt am", "Zahlungsdatum", "Valuta", Zahlungsbestätigung/Kassenbon-Zahlzeitpunkt). NIEMALS gleich dem Rechnungsdatum, Ausstellungsdatum oder Fälligkeitsdatum setzen und NICHT daraus ableiten oder raten. Wenn keine eigene Zahlungsangabe im Text steht: null.
 - lieferant: offizieller Firmenname des Ausstellers (z.B. "L'Oréal Austria GmbH"), nicht Adresse
 - uid_lieferant: UID-Nummer des Ausstellers wenn vorhanden (Format ATUxxxxxxxx), sonst null
 - rechnungsnummer: Rechnungs- oder Belegnummer wenn vorhanden, sonst null
@@ -1276,6 +1287,7 @@ async function verarbeiteFile(file){
     S.pruef={
       res:{
         datum:res.datum||new Date().toISOString().split('T')[0],
+        zahlungsdatum:res.zahlungsdatum||null,
         betrag:res.betrag||0,
         netto:res.netto||null,
         ust_betrag:res.ust_betrag||null,
@@ -1350,7 +1362,9 @@ async function verarbeiteFileBulk(files){
       catch(e){res=analyzeLokal(textB,file.name);}
       const kats=S.profile?.kategorien||DEFAULT_KATS;
       const datum=res.datum||new Date().toISOString().split('T')[0];
-      const monat=datum.substring(0,7);
+      // Zahlungsmonat hat Vorrang für die Monatszuordnung, wenn erkannt — sonst wie bisher Belegdatum.
+      const zahlungsdatum=res.zahlungsdatum||null;
+      const monat=(zahlungsdatum||datum).substring(0,7);
       const betrag=parseFloat(res.betrag)||0;
       if(betrag>0){
         // Dubletten im Bulk-Modus nicht blockieren (sonst bricht der automatische Durchlauf ab),
@@ -1359,7 +1373,7 @@ async function verarbeiteFileBulk(files){
           S.bulkDupWarn.push(file.name+' ('+(res.lieferant||'?')+', '+eur(betrag)+')');
         }
         await insertBeleg({
-          datum,betrag,netto:res.netto||null,ust_betrag:res.ust_betrag||null,ust_satz:res.ust_satz||null,
+          datum,zahlungsdatum,betrag,netto:res.netto||null,ust_betrag:res.ust_betrag||null,ust_satz:res.ust_satz||null,
           art:res.art||'ausgabe',lieferant:(res.lieferant||'').substring(0,60),
           uid_lieferant:res.uid_lieferant||null,rechnungsnummer:res.rechnungsnummer||null,
           kategorie:res.kategorie||kats[0].id,beschreibung:(res.beschreibung||file.name).substring(0,60),
@@ -1420,10 +1434,13 @@ async function doPruefSpeichern(){
   const teilnehmer=document.getElementById('pruef-teilnehmer')?.value||null;
   if(isNaN(betrag)||betrag<=0){toast('Betrag ungültig','err');return;}
   const kats=S.profile?.kategorien||DEFAULT_KATS;
-  const monat=datum?datum.substring(0,7):S.monat;
+  // Zahlungsmonat hat Vorrang für die Monatszuordnung (Ablage/Steuerberater-Versand),
+  // wenn beim Beleg ein Zahlungsdatum erkannt wurde. Sonst unverändertes Verhalten (Belegdatum).
+  const zahlungsdatum=p.res.zahlungsdatum||null;
+  const monat=(zahlungsdatum||datum)?(zahlungsdatum||datum).substring(0,7):S.monat;
   try{
     await insertBeleg({
-      datum,betrag,netto,ust_betrag,ust_satz,
+      datum,zahlungsdatum,betrag,netto,ust_betrag,ust_satz,
       art:p.res.art,lieferant,
       uid_lieferant:p.res.uid_lieferant||null,
       rechnungsnummer:p.res.rechnungsnummer||null,
