@@ -984,8 +984,26 @@ function analyzeLokal(text,filename){
 // (reine Positionslisten) bei Bedarf kürzen.
 function kuerzeBelegtext(text,maxLen=6000,endeLen=2000){
   if(!text||text.length<=maxLen)return text;
-  const kopf=text.substring(0,maxLen-endeLen);
-  const ende=text.substring(text.length-endeLen);
+  // Die Summenzeile (Netto/MwSt/Endbetrag) steht bei Lieferantenrechnungen meist ganz am
+  // Schluss, aber danach folgt oft noch Kleingedrucktes (AGB, Zahlungsbedingungen,
+  // Bankverbindung). Ein reines "letzte N Zeichen"-Fenster kann die Summenzeile dadurch knapp
+  // abschneiden — deshalb das Ende-Fenster an der letzten Fundstelle eines Summen-/
+  // Steuer-Schlüsselworts verankern (mit etwas Vorlauf), statt an einer festen Zeichenzahl vor
+  // Textende. Auf maximal 4000 Zeichen begrenzt, damit sehr weit vorne liegende Treffer die
+  // Kürzung nicht aushebeln.
+  const summenM=[...text.matchAll(/(summe\s+netto|rechnungsendbetrag|gesamtbetrag|zahlbetrag|endbetrag|mehrwertsteuer|mwst[- ]?betrag|ust[- ]?betrag)/gi)];
+  let endeStart=text.length-endeLen;
+  if(summenM.length){
+    // Mehrere Summen-Schlüsselwörter stehen oft als Block zusammen (Netto/MwSt/Endbetrag
+    // nacheinander) — den frühesten Treffer davon als Anker nehmen, nicht nur den letzten,
+    // damit der ganze Block ins Ende-Fenster passt statt nur die letzte Zeile.
+    const kandidaten=summenM.filter(m=>m.index>=text.length-4000);
+    const anker=(kandidaten.length?Math.min(...kandidaten.map(m=>m.index)):summenM[summenM.length-1].index)-150;
+    endeStart=Math.max(text.length-4000,Math.min(endeStart,anker));
+  }
+  endeStart=Math.max(0,endeStart);
+  const kopf=text.substring(0,Math.min(endeStart,maxLen-endeLen));
+  const ende=text.substring(endeStart);
   return kopf+'\n[...gekürzt, mittlere Positionen übersprungen...]\n'+ende;
 }
 async function analyzeClaude(text,filename){
