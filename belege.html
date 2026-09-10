@@ -614,6 +614,20 @@ async function extractPdfText(file){
       }
       if(ocrText.trim().length>fullText.trim().length)fullText=ocrText;
     }
+    // Briefköpfe/Logos sind in PDFs oft Bilder, kein Text — auch wenn der Rest der Seite
+    // echten Text enthält (z.B. Kanzlei- oder Firmen-Kopfzeilen, deren Name nur als Logo-Grafik
+    // vorliegt). Der Fallback oben greift dann NICHT, weil genug anderer Text da ist. Deshalb
+    // Seite 1 zusätzlich per OCR lesen und dem Text voranstellen, ergänzend — nicht ersetzend.
+    if(fullText.trim().length>=25&&seiten.length&&typeof Tesseract!=='undefined'){
+      try{
+        const vp=seiten[0].getViewport({scale:2.2});
+        const canvas=document.createElement('canvas');
+        canvas.width=vp.width;canvas.height=vp.height;
+        await seiten[0].render({canvasContext:canvas.getContext('2d'),viewport:vp}).promise;
+        const kopfText=await ocrCanvas(vorverarbeiteCanvas(canvas));
+        if(kopfText&&kopfText.trim())fullText='[Seite 1 zusätzlich per Bilderkennung gelesen — kann Logos/Briefköpfe enthalten, die im normalen Text fehlen:]\n'+kopfText.trim()+'\n\n'+fullText;
+      }catch(e){console.warn('Briefkopf-OCR Fehler:',e);}
+    }
     return fullText;
   }catch(e){console.warn('PDF.js Fehler:',e);return null;}
 }
