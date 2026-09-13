@@ -1435,21 +1435,23 @@ async function verarbeiteFileBulk(files){
       const monat=(zahlungsdatum||datum).substring(0,7);
       const betrag=parseFloat(res.betrag)||0;
       if(betrag>0){
-        // Dubletten im Bulk-Modus nicht blockieren (sonst bricht der automatische Durchlauf ab),
-        // aber am Ende sichtbar auflisten, damit sie manuell geprüft werden können.
+        // Dubletten im Bulk-Modus NICHT speichern (statt hinterher zu warnen) — sonst muss
+        // jede erkannte Dublette händisch wieder gelöscht werden. Der Durchlauf selbst wird
+        // dadurch nicht unterbrochen, es entfällt nur der insertBeleg-Aufruf für diese Datei.
         if(pruefDublette(res.lieferant,datum,betrag,file.name)){
           S.bulkDupWarn.push(file.name+' ('+(res.lieferant||'?')+', '+eur(betrag)+')');
+        }else{
+          await insertBeleg({
+            datum,zahlungsdatum,betrag,netto:res.netto||null,ust_betrag:res.ust_betrag||null,ust_satz:res.ust_satz||null,
+            art:res.art||'ausgabe',lieferant:(res.lieferant||'').substring(0,60),
+            uid_lieferant:res.uid_lieferant||null,rechnungsnummer:res.rechnungsnummer||null,
+            kategorie:res.kategorie||kats[0].id,beschreibung:(res.beschreibung||file.name).substring(0,60),
+            monat,dateiname:file.name,datei_url,
+            betrieblich:res.betrieblich||'ja',betrieblicher_anteil:res.betrieblicher_anteil||null,
+            vorsteuer_moeglich:res.vorsteuer_moeglich||'unklar',ist_anlage:res.ist_anlage||false,
+            ki_confidence:res.ki_confidence||null,steuer_ampel:res.steuer_ampel||'gelb',
+          });
         }
-        await insertBeleg({
-          datum,zahlungsdatum,betrag,netto:res.netto||null,ust_betrag:res.ust_betrag||null,ust_satz:res.ust_satz||null,
-          art:res.art||'ausgabe',lieferant:(res.lieferant||'').substring(0,60),
-          uid_lieferant:res.uid_lieferant||null,rechnungsnummer:res.rechnungsnummer||null,
-          kategorie:res.kategorie||kats[0].id,beschreibung:(res.beschreibung||file.name).substring(0,60),
-          monat,dateiname:file.name,datei_url,
-          betrieblich:res.betrieblich||'ja',betrieblicher_anteil:res.betrieblicher_anteil||null,
-          vorsteuer_moeglich:res.vorsteuer_moeglich||'unklar',ist_anlage:res.ist_anlage||false,
-          ki_confidence:res.ki_confidence||null,steuer_ampel:res.steuer_ampel||'gelb',
-        });
       }else{
         S.bulkFehler.push(file.name+' (Betrag nicht erkannt)');
       }
@@ -1464,10 +1466,10 @@ async function verarbeiteFileBulk(files){
   S.loading=false;
   S.bulkModus=false;
   await loadBelege();
-  const ok=S.bulkTotal-S.bulkFehler.length;
-  toast(ok+' von '+S.bulkTotal+' Belegen gespeichert'+(S.bulkFehler.length?' · '+S.bulkFehler.length+' fehlgeschlagen':'')+(S.bulkFehler.length?'':'  ✓'));
+  const ok=S.bulkTotal-S.bulkFehler.length-S.bulkDupWarn.length;
+  toast(ok+' von '+S.bulkTotal+' Belegen gespeichert'+(S.bulkFehler.length?' · '+S.bulkFehler.length+' fehlgeschlagen':'')+(S.bulkDupWarn.length?' · '+S.bulkDupWarn.length+' übersprungen (Dublette)':'')+(S.bulkFehler.length||S.bulkDupWarn.length?'':'  ✓'));
   if(S.bulkDupWarn&&S.bulkDupWarn.length){
-    setTimeout(()=>toast('⚠️ Möglicherweise doppelt erfasst: '+S.bulkDupWarn.join(', '),'err'),2500);
+    setTimeout(()=>toast('⚠️ Nicht gespeichert, vermutlich bereits erfasst: '+S.bulkDupWarn.join(', ')+' — bei Bedarf einzeln hochladen.','err'),2500);
   }
   S.bulkQueue=[];S.ansicht='belege';
   render();
