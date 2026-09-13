@@ -1029,11 +1029,11 @@ function kuerzeBelegtext(text,maxLen=6000,endeLen=2000){
   const ende=text.substring(endeStart);
   return kopf+'\n[...gekürzt, mittlere Positionen übersprungen...]\n'+ende;
 }
-async function analyzeClaude(text,filename){
-  const kats=S.profile?.kategorien||DEFAULT_KATS;
-  const prompt=`Analysiere diesen österreichischen Beleg und gib NUR JSON zurück (kein Markdown, kein Kommentar, keine Erklärung).
-
-Rückgabeformat:
+// Gemeinsamer Rückgabeformat/Regel-Block für beide Erkennungswege (Text UND Bild) — eine
+// einzige Quelle, damit sich die Vorgaben (Betrag=Gesamtbetrag, Kategorie-IDs, etc.) nicht
+// zwischen den beiden Prompts auseinanderentwickeln können.
+function belegPromptRegeln(kats){
+  return `Rückgabeformat:
 {
   "datum": "YYYY-MM-DD",
   "zahlungsdatum": "YYYY-MM-DD" oder null,
@@ -1072,17 +1072,60 @@ Regeln:
 - vorsteuer_moeglich: "ja" wenn Rechnung mit USt-Ausweis und betriebliche Nutzung, "nein" wenn Kassabon ohne UID-Ausweis oder eindeutig privat, "unklar" wenn nicht sicher beurteilbar
 - ist_anlage: true wenn Einzelwert voraussichtlich über 1000 EUR und längerfristig nutzbar (Geräte, Maschinen, Einrichtung), sonst false
 - ki_confidence: Gesamtsicherheit für diesen Beleg von 0.00 bis 1.00 (1.00 = alle Felder eindeutig erkannt)
-- steuer_ampel: "gruen" wenn Rechnung vollständig und steuerlich klar, "gelb" wenn Felder fehlen oder Beurteilung unsicher, "rot" wenn wichtige Pflichtangaben fehlen oder steuerlich problematisch
-
-Datei: ${filename}
-Belegtext:
-${kuerzeBelegtext(text)}`;
-
-  const r=await fetch(SB_URL+'/functions/v1/rapid-function',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+S.token},body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:1000,messages:[{role:'user',content:prompt}]})});
+- steuer_ampel: "gruen" wenn Rechnung vollständig und steuerlich klar, "gelb" wenn Felder fehlen oder Beurteilung unsicher, "rot" wenn wichtige Pflichtangaben fehlen oder steuerlich problematisch`;
+}
+// Gemeinsamer Aufruf der rapid-function-Cloud-Funktion für beide Erkennungswege.
+async function rapidFunctionJson(body){
+  const r=await fetch(SB_URL+'/functions/v1/rapid-function',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+S.token},body:JSON.stringify(body)});
   if(!r.ok){const e=await r.json();console.error('Claude API Fehler:',e);throw new Error(e.error?.message||'API Fehler');}
   const data=await r.json();
   const raw=data.content?.map(i=>i.text||'').join('').trim();
   return JSON.parse(raw.replace(/```json|```/g,'').trim());
+}
+async function analyzeClaude(text,filename){
+  const kats=S.profile?.kategorien||DEFAULT_KATS;
+  const prompt=`Analysiere diesen österreichischen Beleg und gib NUR JSON zurück (kein Markdown, kein Kommentar, keine Erklärung).
+
+${belegPromptRegeln(kats)}
+
+Datei: ${filename}
+Belegtext:
+${kuerzeBelegtext(text)}`;
+  return rapidFunctionJson({model:'claude-sonnet-4-6',max_tokens:1000,messages:[{role:'user',content:prompt}]});
+}
+// Schickt das Foto direkt an Claude (Bilderkennung) statt den Umweg über Tesseract-Text zu
+// gehen. Zuverlässiger bei schrägen/schlecht beleuchteten Fotos, da Claude das Bild selbst
+// liest statt eines bereits fehleranfälligen OCR-Zwischenschritts.
+async function analyzeClaudeBild(base64,mediaType,filename){
+  const kats=S.profile?.kategorien||DEFAULT_KATS;
+  const prompt=`Analysiere den abgebildeten österreichischen Beleg (Foto) und gib NUR JSON zurück (kein Markdown, kein Kommentar, keine Erklärung).
+
+${belegPromptRegeln(kats)}
+
+Datei: ${filename}`;
+  return rapidFunctionJson({model:'claude-sonnet-4-6',max_tokens:1000,messages:[{role:'user',content:[
+    {type:'image',source:{type:'base64',media_type:mediaType,data:base64}},
+    {type:'text',text:prompt}
+  ]}]});
+}
+// Verkleinert das Foto vor dem Versand an die KI (nicht die Storage-Originaldatei!) — größere
+// Bilder werden von Claude ohnehin intern auf ähnliche Größe herunterskaliert, würden aber
+// unnötig viel Datenvolumen und Zeit beim Hochladen zur Cloud-Funktion kosten.
+async function bildFuerKiVorbereiten(file){
+  const url=URL.createObjectURL(file);
+  try{
+    const img=await loadImg(url);
+    const MAX=1600;
+    const scale=Math.min(1,MAX/Math.max(img.width,img.height));
+    const w=Math.round(img.width*scale),h=Math.round(img.height*scale);
+    const canvas=document.createElement('canvas');
+    canvas.width=w;canvas.height=h;
+    canvas.getContext('2d').drawImage(img,0,0,w,h);
+    const dataUrl=canvas.toDataURL('image/jpeg',0.85);
+    return{base64:dataUrl.split(',')[1],mediaType:'image/jpeg'};
+  }finally{
+    URL.revokeObjectURL(url);
+  }
 }
 // ── Steuertipps (unverbindliche Diskussionspunkte fürs Steuerberater-Gespräch) ─
 // Aggregiert NUR Summen/Zählungen aus den bereits im Browser geladenen Belegen (S.belege) —
@@ -1298,14 +1341,30 @@ async function verarbeiteFile(file){
   S.loading=true;render();
   try{
     let text=file.name;
-    if(file.type==='text/plain')text=await file.text();
-    else if(file.type==='application/pdf'){
-      const pdfText=await extractPdfText(file);
-      text=pdfText||('PDF: '+file.name);
+    let res=null,quelle='ki',kiFehler=null;
+    const istBild=file.type.startsWith('image/');
+    if(istBild){
+      // Foto direkt an Claude schicken (Bilderkennung) statt Umweg über Tesseract-Text —
+      // zuverlässiger bei schrägen/schlecht beleuchteten Fotos UND schneller, weil die 4
+      // Tesseract-Rotationsversuche (ocrBild) entfallen, solange die Bild-Analyse klappt.
+      try{
+        const{base64,mediaType}=await bildFuerKiVorbereiten(file);
+        res=await analyzeClaudeBild(base64,mediaType,file.name);
+        text='Bild direkt per KI-Bilderkennung ausgewertet (kein OCR-Text nötig)';
+      }catch(e){
+        console.warn('Bild-Analyse fehlgeschlagen, falle auf Tesseract-Text zurück:',e);
+      }
     }
-    else if(file.type.startsWith('image/')){
-      const ocrText=await ocrBild(file);
-      text=ocrText&&ocrText.trim().length>20?ocrText:('Bild: '+file.name);
+    if(!res){
+      if(file.type==='text/plain')text=await file.text();
+      else if(file.type==='application/pdf'){
+        const pdfText=await extractPdfText(file);
+        text=pdfText||('PDF: '+file.name);
+      }
+      else if(istBild){
+        const ocrText=await ocrBild(file);
+        text=ocrText&&ocrText.trim().length>20?ocrText:('Bild: '+file.name);
+      }
     }
     // Storage Upload immer zuerst, unabhängig vom API-Key
     let datei_url=null;
@@ -1329,28 +1388,29 @@ async function verarbeiteFile(file){
       }).join('\n');
     }
     const textBereinigt=bereinigeFuerAnalyse(text);
-    let res,quelle='ki',kiFehler=null;
-    try{
-      res=await analyzeClaude(textBereinigt,file.name);
-      // Gezielter Steuerfeld-Fallback: Claude war erfolgreich, hat aber keine MwSt-Angaben
-      // gefunden. Die lokale Regex-Erkennung bekommt denselben Text oft trotzdem sauber
-      // ausgewertet — deshalb hier NUR netto/ust_betrag/ust_satz nachziehen, alle anderen
-      // von Claude erkannten Felder bleiben unverändert.
-      if(res.netto==null&&res.ust_betrag==null&&res.ust_satz==null){
-        const lokal=analyzeLokal(textBereinigt,file.name);
-        if(lokal.netto!=null||lokal.ust_betrag!=null||lokal.ust_satz!=null){
-          res.netto=lokal.netto;
-          res.ust_betrag=lokal.ust_betrag;
-          res.ust_satz=lokal.ust_satz;
+    if(!res){
+      try{
+        res=await analyzeClaude(textBereinigt,file.name);
+        // Gezielter Steuerfeld-Fallback: Claude war erfolgreich, hat aber keine MwSt-Angaben
+        // gefunden. Die lokale Regex-Erkennung bekommt denselben Text oft trotzdem sauber
+        // ausgewertet — deshalb hier NUR netto/ust_betrag/ust_satz nachziehen, alle anderen
+        // von Claude erkannten Felder bleiben unverändert.
+        if(res.netto==null&&res.ust_betrag==null&&res.ust_satz==null){
+          const lokal=analyzeLokal(textBereinigt,file.name);
+          if(lokal.netto!=null||lokal.ust_betrag!=null||lokal.ust_satz!=null){
+            res.netto=lokal.netto;
+            res.ust_betrag=lokal.ust_betrag;
+            res.ust_satz=lokal.ust_satz;
+          }
         }
       }
-    }
-    catch(e){
-      // Kein API-Key oder Fehler → lokale Analyse aus PDF-Text
-      quelle='lokal';
-      kiFehler=(e&&e.message==='kein_key')?'Kein API-Key hinterlegt':((e&&e.message)||'Unbekannter Fehler bei der KI-Erkennung');
-      console.warn('KI-Erkennung fehlgeschlagen, nutze lokale Analyse:',kiFehler);
-      res=analyzeLokal(textBereinigt,file.name);
+      catch(e){
+        // Kein API-Key oder Fehler → lokale Analyse aus PDF-Text
+        quelle='lokal';
+        kiFehler=(e&&e.message==='kein_key')?'Kein API-Key hinterlegt':((e&&e.message)||'Unbekannter Fehler bei der KI-Erkennung');
+        console.warn('KI-Erkennung fehlgeschlagen, nutze lokale Analyse:',kiFehler);
+        res=analyzeLokal(textBereinigt,file.name);
+      }
     }
     const kats=S.profile?.kategorien||DEFAULT_KATS;
     // Prüfansicht öffnen statt sofort speichern
@@ -1411,13 +1471,28 @@ async function verarbeiteFileBulk(files){
   for(const file of files){
     try{
       let text=file.name;
-      if(file.type==='text/plain')text=await file.text();
-      else if(file.type==='application/pdf'){
-        const pdfText=await extractPdfText(file);
-        text=pdfText||('PDF: '+file.name);
-      }else if(file.type.startsWith('image/')){
-        const ocrText=await ocrBild(file);
-        text=ocrText&&ocrText.trim().length>20?ocrText:('Bild: '+file.name);
+      let res=null;
+      const istBild=file.type.startsWith('image/');
+      if(istBild){
+        // Foto direkt an Claude schicken (Bilderkennung) — gleiches Prinzip wie in
+        // verarbeiteFile, siehe dort für die Begründung (Zuverlässigkeit + Geschwindigkeit).
+        try{
+          const{base64,mediaType}=await bildFuerKiVorbereiten(file);
+          res=await analyzeClaudeBild(base64,mediaType,file.name);
+          text='Bild direkt per KI-Bilderkennung ausgewertet (kein OCR-Text nötig)';
+        }catch(e){
+          console.warn('Bild-Analyse fehlgeschlagen, falle auf Tesseract-Text zurück:',e);
+        }
+      }
+      if(!res){
+        if(file.type==='text/plain')text=await file.text();
+        else if(file.type==='application/pdf'){
+          const pdfText=await extractPdfText(file);
+          text=pdfText||('PDF: '+file.name);
+        }else if(istBild){
+          const ocrText=await ocrBild(file);
+          text=ocrText&&ocrText.trim().length>20?ocrText:('Bild: '+file.name);
+        }
       }
       // Storage Upload
       let datei_url=null;
@@ -1429,22 +1504,23 @@ async function verarbeiteFileBulk(files){
       // QR-Code-Bereinigung (gleich wie in verarbeiteFile)
       function bereinige(t){return t.split(/\n/).filter(z=>{const s=z.trim();if(/^_R[0-9]-/.test(s))return false;if(/AT0_\d+\/\d+/.test(s))return false;if(/T\d{2}:\d{2}:\d{2}MSR/.test(s))return false;if(/[A-Za-z0-9+\/]{30,}={0,2}$/.test(s)&&!/[äöüÄÖÜ\s,]/.test(s))return false;if((s.match(/[A-Z0-9]/g)||[]).length>s.length*0.7&&s.length>20&&!/[äöü,\s]/.test(s))return false;return true;}).join('\n');}
       const textB=bereinige(text);
-      let res;
-      try{
-        res=await analyzeClaude(textB,file.name);
-        // Gleicher gezielter Steuerfeld-Fallback wie im Einzel-Upload (verarbeiteFile):
-        // Claude erfolgreich, aber keine MwSt-Angaben gefunden → nur netto/ust_betrag/ust_satz
-        // aus der lokalen Analyse nachziehen, alle übrigen Claude-Felder unverändert lassen.
-        if(res.netto==null&&res.ust_betrag==null&&res.ust_satz==null){
-          const lokal=analyzeLokal(textB,file.name);
-          if(lokal.netto!=null||lokal.ust_betrag!=null||lokal.ust_satz!=null){
-            res.netto=lokal.netto;
-            res.ust_betrag=lokal.ust_betrag;
-            res.ust_satz=lokal.ust_satz;
+      if(!res){
+        try{
+          res=await analyzeClaude(textB,file.name);
+          // Gleicher gezielter Steuerfeld-Fallback wie im Einzel-Upload (verarbeiteFile):
+          // Claude erfolgreich, aber keine MwSt-Angaben gefunden → nur netto/ust_betrag/ust_satz
+          // aus der lokalen Analyse nachziehen, alle übrigen Claude-Felder unverändert lassen.
+          if(res.netto==null&&res.ust_betrag==null&&res.ust_satz==null){
+            const lokal=analyzeLokal(textB,file.name);
+            if(lokal.netto!=null||lokal.ust_betrag!=null||lokal.ust_satz!=null){
+              res.netto=lokal.netto;
+              res.ust_betrag=lokal.ust_betrag;
+              res.ust_satz=lokal.ust_satz;
+            }
           }
         }
+        catch(e){res=analyzeLokal(textB,file.name);}
       }
-      catch(e){res=analyzeLokal(textB,file.name);}
       const kats=S.profile?.kategorien||DEFAULT_KATS;
       const datum=res.datum||new Date().toISOString().split('T')[0];
       // Zahlungsmonat hat Vorrang für die Monatszuordnung, wenn erkannt — sonst wie bisher Belegdatum.
