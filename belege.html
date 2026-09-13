@@ -126,6 +126,7 @@
   </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 </head>
 <body>
 <div id="app" style="display:flex;flex-direction:column;min-height:100dvh;width:100%;">
@@ -1605,9 +1606,12 @@ function nettoMwstFuerBeleg(b){
   const netto=brutto/1.2;
   return{netto,mwst:brutto-netto,geschaetzt:istMwstGeschaetzt(b)};
 }
-function exportAbschlussCSV(){
+// Baut die Steuerberater-CSV als String (ohne Download auszulösen), damit sowohl der
+// eigenständige CSV-Button als auch das ZIP-Bündel (monatsabschlussZip) dieselbe Logik
+// verwenden — keine zweite, parallel gepflegte Kopie der Netto/MwSt-Berechnung.
+function buildAbschlussCSV(){
   const bfm=S.belege.filter(b=>b.monat===S.monat);
-  if(!bfm.length){toast('Keine Belege in diesem Monat','err');return;}
+  if(!bfm.length)return null;
   const kats=S.profile?.kategorien||DEFAULT_KATS;
   // Hinweis-Spalte nur in diesem Export: markiert Belege, bei denen mangels gespeicherter
   // Steuerfelder (netto/ust_betrag/ust_satz) der 20%-Fallback verwendet werden musste.
@@ -1638,12 +1642,84 @@ function exportAbschlussCSV(){
   const hinweisSumme=geschaetztAnzahl>0?(geschaetztAnzahl+' Beleg(e) mit geschätzter MwSt'):'';
   const zusammen='\n;;GESAMT AUSGABEN;;Ausgabe;'+sumBrutto.toFixed(2).replace('.',',')+';'+sumNetto.toFixed(2).replace('.',',')+';'+sumMwSt.toFixed(2).replace('.',',')+';'+hinweisSumme;
   const bom='\uFEFF';
-  const blob=new Blob([bom+kopf+zeilen+zusammen],{type:'text/csv;charset=utf-8;'});
+  return{content:bom+kopf+zeilen+zusammen,filename:'Steuerberater_'+mL(S.monat).replace(' ','_')+'.csv'};
+}
+function exportAbschlussCSV(){
+  const r=buildAbschlussCSV();
+  if(!r){toast('Keine Belege in diesem Monat','err');return;}
+  const blob=new Blob([r.content],{type:'text/csv;charset=utf-8;'});
   const a=document.createElement('a');
   a.href=URL.createObjectURL(blob);
-  a.download='Steuerberater_'+mL(S.monat).replace(' ','_')+'.csv';
+  a.download=r.filename;
   a.click();
   toast('CSV exportiert ✓');
+}
+
+// ── Monatsabschluss: CSV + saubere benannte Belegdateien als ZIP ───────────────
+// Transliteriert Umlaute wie im Deutschen üblich (ä→ae, nicht nur Akzent entfernen),
+// alles andere Nicht-Alphanumerische wird zu "-", damit der Dateiname auf jedem
+// Betriebssystem (inkl. Windows) unproblematisch ist.
+function slugifyDE(s){
+  return String(s||'')
+    .replace(/ä/g,'ae').replace(/ö/g,'oe').replace(/ü/g,'ue').replace(/ß/g,'ss')
+    .replace(/Ä/g,'Ae').replace(/Ö/g,'Oe').replace(/Ü/g,'Ue')
+    .replace(/[^a-zA-Z0-9]+/g,'-').replace(/^-+|-+$/g,'').substring(0,40)||'Beleg';
+}
+function belegDateiname(b){
+  const betrag=(b.betrag||0).toFixed(2);
+  return (b.datum||'0000-00-00')+'_'+slugifyDE(b.lieferant)+'_'+betrag;
+}
+// Lädt die im Storage abgelegte Originaldatei erneut herunter (nicht die kurzlebige
+// Objekt-URL aus der Prüfansicht, die zu diesem Zeitpunkt längst nicht mehr existiert).
+// Gleiches 401→Refresh-Retry-Muster wie sbGet, weil das Bucket denselben Session-Token
+// wie beim Upload voraussetzt.
+async function fetchBelegDatei(url){
+  let r=await fetch(url,{headers:{apikey:SB_KEY,Authorization:'Bearer '+(S.token||SB_KEY)}});
+  if(r.status===401){await refreshToken();r=await fetch(url,{headers:{apikey:SB_KEY,Authorization:'Bearer '+S.token}});}
+  if(!r.ok)throw new Error('HTTP '+r.status);
+  return await r.blob();
+}
+function extFuerBelegDatei(blob,dateiname){
+  const map={'image/jpeg':'jpg','image/png':'png','image/webp':'webp','application/pdf':'pdf'};
+  if(blob.type&&map[blob.type])return map[blob.type];
+  const m=/\.([a-zA-Z0-9]+)$/.exec(dateiname||'');
+  return m?m[1].toLowerCase():'bin';
+}
+async function monatsabschlussZip(){
+  const bfm=S.belege.filter(b=>b.monat===S.monat);
+  if(!bfm.length){toast('Keine Belege in diesem Monat','err');return;}
+  if(typeof JSZip==='undefined'){toast('ZIP-Bibliothek nicht geladen — bitte Seite neu laden','err');return;}
+  S.loading=true;render();
+  try{
+    const zip=new JSZip();
+    const csv=buildAbschlussCSV();
+    zip.file(csv.filename,csv.content);
+    const mitDatei=bfm.filter(b=>b.datei_url);
+    const ohneDatei=bfm.length-mitDatei.length;
+    const usedNames=new Set();
+    let fehlgeschlagen=0;
+    for(const b of mitDatei){
+      try{
+        const blob=await fetchBelegDatei(b.datei_url);
+        const ext=extFuerBelegDatei(blob,b.dateiname);
+        const basis=belegDateiname(b);
+        let name=basis+'.'+ext,i=2;
+        while(usedNames.has(name)){name=basis+'_'+i+'.'+ext;i++;}
+        usedNames.add(name);
+        zip.file(name,blob);
+      }catch(e){fehlgeschlagen++;}
+    }
+    const zipBlob=await zip.generateAsync({type:'blob'});
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(zipBlob);
+    a.download='Monatsabschluss_'+mL(S.monat).replace(' ','_')+'.zip';
+    a.click();
+    let msg=(mitDatei.length-fehlgeschlagen)+' Belegdatei(en) gebündelt + CSV';
+    if(ohneDatei)msg+=' · '+ohneDatei+' ohne Datei (nur in CSV)';
+    if(fehlgeschlagen)msg+=' · '+fehlgeschlagen+' Datei(en) fehlgeschlagen';
+    toast(msg);
+  }catch(e){toast('Fehler beim Bündeln: '+e.message,'err');}
+  S.loading=false;render();
 }
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
@@ -1988,7 +2064,8 @@ function render(){
       +'<button class="btn-primary" onclick="exportAbschlussCSV()" style="flex:1">📥 CSV Steuerberater</button>'
       +'<button class="btn-primary" onclick="exportCSV()" style="flex:1;background:#3D2F4E">📥 CSV BMD</button>'
     +'</div>'
-    +'<div style="font-size:11px;color:var(--ink3);line-height:1.5;margin-top:4px">Steuerberater: Datum, Lieferant, Brutto, Netto, MwSt. · BMD: kompaktes Format für BMD-Import.</div>';
+    +'<button class="btn-primary" '+(S.loading?'disabled style="opacity:0.5;cursor:not-allowed"':'')+' onclick="monatsabschlussZip()" style="background:#7C6B8A">'+(S.loading?'⏳ Wird gebündelt…':'📦 Monatsabschluss (CSV + Belege als ZIP)')+'</button>'
+    +'<div style="font-size:11px;color:var(--ink3);line-height:1.5;margin-top:4px">Steuerberater: Datum, Lieferant, Brutto, Netto, MwSt. · BMD: kompaktes Format für BMD-Import. · Monatsabschluss: Steuerberater-CSV + alle Belegdateien sauber benannt in einer ZIP-Datei — Belege ohne Foto/PDF sind nur in der CSV enthalten.</div>';
   }
 
 
