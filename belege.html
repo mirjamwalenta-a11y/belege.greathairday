@@ -226,7 +226,7 @@ let S={
   authEmail:'',authPass:'',authName:'',authErr:'',
   draft:null,
   tipps:null,tippsDatum:null,tippsLoading:false,
-  bulkQueue:[],bulkTotal:0,bulkDone:0,bulkFehler:[],bulkModus:false,
+  bulkQueue:[],bulkTotal:0,bulkDone:0,bulkFehlerFiles:[],bulkModus:false,
   filterGeschaetzt:false,
 };
 
@@ -1387,7 +1387,7 @@ async function verarbeiteFileBulk(files){
   S.bulkQueue=[...files];
   S.bulkTotal=files.length;
   S.bulkDone=0;
-  S.bulkFehler=[];
+  S.bulkFehlerFiles=[];
   S.bulkDupWarn=[];
   S.loading=true;
   render();
@@ -1454,10 +1454,10 @@ async function verarbeiteFileBulk(files){
           });
         }
       }else{
-        S.bulkFehler.push(file.name+' (Betrag nicht erkannt)');
+        S.bulkFehlerFiles.push({file,name:file.name,grund:'Betrag nicht erkannt'});
       }
     }catch(e){
-      S.bulkFehler.push(file.name+' ('+e.message+')');
+      S.bulkFehlerFiles.push({file,name:file.name,grund:e.message});
     }
     S.bulkDone++;
     render();
@@ -1467,13 +1467,26 @@ async function verarbeiteFileBulk(files){
   S.loading=false;
   S.bulkModus=false;
   await loadBelege();
-  const ok=S.bulkTotal-S.bulkFehler.length-S.bulkDupWarn.length;
-  toast(ok+' von '+S.bulkTotal+' Belegen gespeichert'+(S.bulkFehler.length?' · '+S.bulkFehler.length+' fehlgeschlagen':'')+(S.bulkDupWarn.length?' · '+S.bulkDupWarn.length+' übersprungen (Dublette)':'')+(S.bulkFehler.length||S.bulkDupWarn.length?'':'  ✓'));
+  const ok=S.bulkTotal-S.bulkFehlerFiles.length-S.bulkDupWarn.length;
+  toast(ok+' von '+S.bulkTotal+' Belegen gespeichert'+(S.bulkFehlerFiles.length?' · '+S.bulkFehlerFiles.length+' fehlgeschlagen':'')+(S.bulkDupWarn.length?' · '+S.bulkDupWarn.length+' übersprungen (Dublette)':'')+(S.bulkFehlerFiles.length||S.bulkDupWarn.length?'':'  ✓'));
   if(S.bulkDupWarn&&S.bulkDupWarn.length){
     setTimeout(()=>toast('⚠️ Nicht gespeichert, vermutlich bereits erfasst: '+S.bulkDupWarn.join(', ')+' — bei Bedarf einzeln hochladen.','err'),2500);
   }
-  S.bulkQueue=[];S.ansicht='belege';
+  S.bulkQueue=[];
+  // Bei Fehlern auf der Upload-Seite bleiben (statt zur Liste zu wechseln), damit die
+  // "Erneut versuchen"-Karte direkt sichtbar ist, statt in der Belege-Liste zu verschwinden.
+  if(!S.bulkFehlerFiles.length)S.ansicht='belege';
   render();
+}
+// Versucht gezielt nur die zuletzt fehlgeschlagenen Dateien erneut, statt den ganzen
+// Stapel neu hochladen zu müssen. Nutzt dieselbe verarbeiteFileBulk-Pipeline — bei nur
+// noch einer verbliebenen Datei landet die dann automatisch in der Einzel-Prüfansicht.
+async function bulkFehlerErneutVersuchen(){
+  const dateien=(S.bulkFehlerFiles||[]).map(f=>f.file);
+  if(!dateien.length)return;
+  S.bulkFehlerFiles=[];
+  render();
+  await verarbeiteFileBulk(dateien);
 }
 
 function updatePruefBtn(){
@@ -1986,6 +1999,16 @@ function render(){
   else if(ansicht==='neu'){
     const mO=kats.map(k=>'<option value="'+k.id+'"'+(S.manuell.kategorie===k.id?' selected':'')+'>'+k.icon+' '+k.label+'</option>').join('');
     inhalt=''
+      +(!S.loading&&S.bulkFehlerFiles.length
+        ?'<div class="card" style="background:#FEE2E2;border:1px solid #FCA5A5;margin-bottom:12px">'
+          +'<div style="font-size:13px;font-weight:600;color:#991B1B;margin-bottom:6px">⚠️ '+S.bulkFehlerFiles.length+' Datei(en) beim letzten Bulk-Upload fehlgeschlagen</div>'
+          +'<div style="font-size:12px;color:#991B1B;margin-bottom:10px">'+S.bulkFehlerFiles.map(f=>f.name+' ('+f.grund+')').join(', ')+'</div>'
+          +'<div style="display:flex;gap:8px">'
+            +'<button class="btn-sm" style="flex:1;background:#991B1B;color:#fff;border:none;border-radius:8px;padding:8px;cursor:pointer" onclick="bulkFehlerErneutVersuchen()">🔄 Erneut versuchen</button>'
+            +'<button class="btn-sm" style="flex:1;background:#fff;color:#991B1B;border:1.5px solid #FCA5A5;border-radius:8px;padding:8px;cursor:pointer" onclick="S.bulkFehlerFiles=[];render()">Verwerfen</button>'
+          +'</div>'
+        +'</div>'
+        :'')
       +(S.loading&&S.bulkModus
         // Bulk-Fortschrittsanzeige
         ?'<div class="card" style="margin-bottom:12px">'
@@ -1994,7 +2017,7 @@ function render(){
           +'<div style="background:#E8E0EF;border-radius:6px;height:8px;overflow:hidden">'
             +'<div style="background:var(--accent);height:8px;border-radius:6px;transition:width 0.3s;width:'+(S.bulkTotal>0?Math.round(S.bulkDone/S.bulkTotal*100):0)+'%"></div>'
           +'</div>'
-          +(S.bulkFehler.length?'<div style="font-size:11px;color:var(--red);margin-top:8px">⚠️ Fehler: '+S.bulkFehler.join(', ')+'</div>':'')
+          +(S.bulkFehlerFiles.length?'<div style="font-size:11px;color:var(--red);margin-top:8px">⚠️ Fehler: '+S.bulkFehlerFiles.map(f=>f.name+' ('+f.grund+')').join(', ')+'</div>':'')
         +'</div>'
         :(S.loading?'<div class="analyzing"><div class="analyzing-dot"></div><span style="font-size:13px;color:var(--accent);font-weight:500">Beleg wird analysiert…</span></div>':''))
       +(S.loading
