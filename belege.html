@@ -1501,6 +1501,10 @@ function updatePruefBtn(){
 async function doPruefSpeichern(){
   const p=S.pruef;
   if(!p)return;
+  // Schutz gegen Doppel-Tap (v.a. mobil): ohne diese Sperre kann ein zweiter Tap während des
+  // laufenden insertBeleg-Aufrufs (vor dem await) denselben Beleg ein zweites Mal speichern,
+  // da S.pruef erst NACH dem await auf null gesetzt wird.
+  if(S.pruefSpeichernLaeuft)return;
   // Bestätigung Pflicht
   if(!document.getElementById('pruef-bestaetigt')?.checked){toast('Bitte zuerst den Betrag bestätigen','err');return;}
   // Werte aus den Eingabefeldern lesen
@@ -1523,6 +1527,13 @@ async function doPruefSpeichern(){
   // wenn beim Beleg ein Zahlungsdatum erkannt wurde. Sonst unverändertes Verhalten (Belegdatum).
   const zahlungsdatum=p.res.zahlungsdatum||null;
   const monat=(zahlungsdatum||datum)?(zahlungsdatum||datum).substring(0,7):S.monat;
+  S.pruefSpeichernLaeuft=true;
+  // Sperre direkt am Button setzen statt per render() — ein render() würde hier das ganze
+  // Prüf-Sheet (inkl. bereits editierter Nutzer-Eingaben) aus dem Template neu aufbauen und
+  // damit z.B. das Häkchen und Korrekturen zurücksetzen, während der Speichervorgang noch läuft.
+  const btnEl=document.getElementById('pruef-speichern-btn');
+  const btnLabelVorher=btnEl?btnEl.textContent:'';
+  if(btnEl){btnEl.disabled=true;btnEl.style.opacity='0.5';btnEl.style.cursor='not-allowed';btnEl.textContent='⏳ Wird gespeichert…';}
   try{
     await insertBeleg({
       datum,zahlungsdatum,betrag,netto,ust_betrag,ust_satz,
@@ -1541,7 +1552,13 @@ async function doPruefSpeichern(){
     toast('Beleg gespeichert ✓');
     if(p.localUrl)URL.revokeObjectURL(p.localUrl);
     S.pruef=null;
-  }catch(e){toast('Fehler: '+e.message,'err');}
+  }catch(e){
+    toast('Fehler: '+e.message,'err');
+    S.pruefSpeichernLaeuft=false;
+    if(btnEl){btnEl.disabled=false;btnEl.style.opacity='1';btnEl.style.cursor='pointer';btnEl.textContent=btnLabelVorher;}
+    return;
+  }
+  S.pruefSpeichernLaeuft=false;
   render();
 }
 
@@ -2148,6 +2165,9 @@ async function collectAndSave(){
 }
 
 async function doManuell(){
+  // Gleicher Doppel-Tap-Schutz wie in doPruefSpeichern (siehe dort) — sonst kann ein
+  // zweiter Tap während des laufenden insertBeleg-Aufrufs denselben Beleg doppelt anlegen.
+  if(S.manuellSpeichernLaeuft)return;
   // Felder direkt aus dem DOM lesen (sicherer auf Mobile)
   const datumEl=document.querySelector('#manuell-datum');
   const lieferantEl=document.querySelector('#manuell-lieferant');
@@ -2177,10 +2197,12 @@ async function doManuell(){
   }
   const kats=S.profile?.kategorien||DEFAULT_KATS;
   const monat=datum.substring(0,7);
+  S.manuellSpeichernLaeuft=true;
   try{
     await insertBeleg({datum,betrag:betragNum,art:S.manuell.art||'ausgabe',lieferant:S.manuell.lieferant||'',kategorie:S.manuell.kategorie||kats[0].id,beschreibung:S.manuell.beschreibung,monat,anlass:S.manuell.anlass||null,teilnehmer:S.manuell.teilnehmer||null,bezahlt_via:S.manuell.bezahlt_via||'geschaeftskonto'});
     S.manuell=emptyM();S.ansicht='belege';render();toast('Beleg gespeichert ✓');
   }catch(e){toast('Fehler beim Speichern: '+e.message,'err');}
+  S.manuellSpeichernLaeuft=false;
 }
 async function doEdit(){
   const d=S.editData;
