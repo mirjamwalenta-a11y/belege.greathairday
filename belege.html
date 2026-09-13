@@ -1454,9 +1454,49 @@ async function verarbeiteFile(file){
 // Verarbeitet mehrere Dateien sequenziell und zeigt Fortschritt.
 // Bei Einzeldatei: direkt in Prüfansicht (wie bisher).
 // Bei mehreren Dateien: alle automatisch speichern, Ergebnis-Zusammenfassung.
+// Prüft, ob eine einzeln hochgeladene PDF mehrere Seiten hat (z.B. mehrere Rechnungen, die
+// eine Scan-App in einer Sammel-PDF gebündelt hat) und fragt nach, ob sie in einzelne Belege
+// aufgeteilt werden soll. Bei Zustimmung: jede Seite wird zu einem eigenen Bild gerendert und
+// läuft danach durch dieselbe Bulk-Pipeline wie einzeln hochgeladene Fotos (inkl. der KI-
+// Bilderkennung, Dubletten-Check, Retry bei Fehlern). Bei Ablehnung oder einer PDF mit nur
+// einer Seite: null zurückgeben, dann bleibt das bisherige Verhalten (ganze PDF = ein Beleg).
+async function pdfEvtlAufteilen(file){
+  if(typeof pdfjsLib==='undefined')return null;
+  try{
+    const ab=await file.arrayBuffer();
+    const pdf=await pdfjsLib.getDocument({data:ab}).promise;
+    if(pdf.numPages<=1)return null;
+    const frage='Diese PDF hat '+pdf.numPages+' Seiten. Als '+pdf.numPages+' einzelne Belege behandeln (z.B. mehrere Rechnungen aus einer Scan-App)?\n\nAbbrechen = wie bisher als EIN Beleg (z.B. bei einer echten mehrseitigen Rechnung).';
+    if(!confirm(frage))return null;
+    const basis=file.name.replace(/\.[^.]+$/,'');
+    const bilder=[];
+    for(let i=1;i<=pdf.numPages;i++){
+      const page=await pdf.getPage(i);
+      const vp=page.getViewport({scale:2.2});
+      const canvas=document.createElement('canvas');
+      canvas.width=vp.width;canvas.height=vp.height;
+      await page.render({canvasContext:canvas.getContext('2d'),viewport:vp}).promise;
+      const blob=await new Promise(res=>canvas.toBlob(res,'image/jpeg',0.9));
+      if(blob)bilder.push(new File([blob],basis+'_Seite_'+i+'.jpg',{type:'image/jpeg'}));
+    }
+    return bilder.length?bilder:null;
+  }catch(e){
+    console.warn('PDF-Aufteilung fehlgeschlagen, PDF wird als ein Beleg behandelt:',e);
+    return null;
+  }
+}
 async function verarbeiteFileBulk(files){
   if(!files||!files.length)return;
-  if(files.length===1){await verarbeiteFile(files[0]);return;}
+  if(files.length===1){
+    const nurDatei=files[0];
+    if(nurDatei.type==='application/pdf'){
+      const aufgeteilt=await pdfEvtlAufteilen(nurDatei);
+      if(aufgeteilt){files=aufgeteilt;}
+      else{await verarbeiteFile(nurDatei);return;}
+    }else{
+      await verarbeiteFile(nurDatei);return;
+    }
+  }
 
   // Bulk-Modus: alle Dateien automatisch analysieren und speichern (ohne Prüf-Modal)
   S.bulkModus=true;
