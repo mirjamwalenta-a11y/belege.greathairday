@@ -138,6 +138,11 @@ const SB_URL = 'https://lpuxvvfrrcnbuzafscyk.supabase.co';
 const INVITE_CODE = 'GREATHAIR2026'; // <-- hier Code ändern um Zugang zu sperren
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxwdXh2dmZycmNuYnV6YWZzY3lrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ2ODIxNDcsImV4cCI6MjEwMDI1ODE0N30.6VZUmmXj_x3Q8J55s_tbOHcW5-U5OXllGoEBhypaVfI';
 const MONATE=['Jänner','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
+const BEZAHLT_VIA=[
+  {id:'geschaeftskonto',label:'Geschäftskonto'},
+  {id:'bar_kassa',label:'Bar/Kassa'},
+  {id:'privat_ausgelegt',label:'Privat ausgelegt'},
+];
 const DEFAULT_KATS=[
   {id:'k1',icon:'🛒',label:'Einkauf & Material'},
   {id:'k2',icon:'🏠',label:'Miete & Betriebskosten'},
@@ -224,7 +229,9 @@ let S={
   filterGeschaetzt:false,
 };
 
-function emptyM(){return{datum:'',betrag:'',art:'ausgabe',lieferant:'',kategorie:'',beschreibung:'',anlass:'',teilnehmer:''};}
+function emptyM(){return{datum:'',betrag:'',art:'ausgabe',lieferant:'',kategorie:'',beschreibung:'',anlass:'',teilnehmer:'',bezahlt_via:'geschaeftskonto'};}
+function bezahltViaLabel(v){return(BEZAHLT_VIA.find(o=>o.id===v)||BEZAHLT_VIA[0]).label;}
+function bezahltViaOptions(selected){return BEZAHLT_VIA.map(o=>'<option value="'+o.id+'"'+((selected||'geschaeftskonto')===o.id?' selected':'')+'>'+o.label+'</option>').join('');}
 // Gemeinsames Muster für Bewirtungs-Erkennung (Restaurant/Gasthaus/Café etc.) — wird für
 // die Steuerspar-Tipps UND für das Ein-/Ausblenden der Anlass-/Teilnehmer-Felder verwendet.
 const BEWIRTUNG_REGEX=/bewirt|restaurant|gasthaus|caf[eé]|kaffeehaus/i;
@@ -334,6 +341,7 @@ async function insertBeleg(b){
     steuer_ampel:b.steuer_ampel||'gelb',
     anlass:b.anlass||null,
     teilnehmer:b.teilnehmer||null,
+    bezahlt_via:b.bezahlt_via||'geschaeftskonto',
   };
   const r=await fetch(SB_URL+'/rest/v1/belege_neu',{
     method:'POST',
@@ -1350,6 +1358,7 @@ async function verarbeiteFile(file){
         ist_anlage:res.ist_anlage||false,
         ki_confidence:res.ki_confidence||null,
         steuer_ampel:res.steuer_ampel||'gelb',
+        bezahlt_via:'geschaeftskonto',
       },
       dateiname:file.name,
       pdfText:text,
@@ -1491,6 +1500,7 @@ async function doPruefSpeichern(){
   const betrieblich=document.getElementById('pruef-betrieblich')?.value||p.res.betrieblich||'ja';
   const anlass=document.getElementById('pruef-anlass')?.value||null;
   const teilnehmer=document.getElementById('pruef-teilnehmer')?.value||null;
+  const bezahlt_via=document.getElementById('pruef-bezahlt-via')?.value||p.res.bezahlt_via||'geschaeftskonto';
   if(isNaN(betrag)||betrag<=0){toast('Betrag ungültig','err');return;}
   const kats=S.profile?.kategorien||DEFAULT_KATS;
   // Zahlungsmonat hat Vorrang für die Monatszuordnung (Ablage/Steuerberater-Versand),
@@ -1510,6 +1520,7 @@ async function doPruefSpeichern(){
       anlass,teilnehmer,
       ki_confidence:p.res.ki_confidence||null,
       steuer_ampel:p.res.steuer_ampel||'gelb',
+      bezahlt_via,
     });
     toast('Beleg gespeichert ✓');
     if(p.localUrl)URL.revokeObjectURL(p.localUrl);
@@ -1717,6 +1728,8 @@ function renderPruefModal(){
     +'</label>'
     +'<label class="pruef-label">\u{1F3EA} Lieferant / Aussteller</label>'
     +'<input class="inp" id="pruef-lieferant" type="text" value="'+(p.res.lieferant||'')+'"/>'
+    +'<label class="pruef-label">\u{1F4B3} Bezahlt via</label>'
+    +'<select class="inp" id="pruef-bezahlt-via">'+bezahltViaOptions(p.res.bezahlt_via)+'</select>'
     +(istBewirtung(p.res.lieferant,p.res.beschreibung)?('<div style="background:#FFF3CD;color:#856404;border-radius:8px;padding:10px 12px;font-size:12px;margin-top:10px;margin-bottom:2px"><strong>🍽️ Wirkt wie eine Bewirtung.</strong> Für den Nachweis bitte Anlass und Teilnehmer angeben.</div><label class="pruef-label">Anlass</label><input class="inp" id="pruef-anlass" type="text" placeholder="z.B. Teambesprechung, Kundengespräch" value="'+(p.res.anlass||'')+'"/><label class="pruef-label">Teilnehmer</label><input class="inp" id="pruef-teilnehmer" type="text" placeholder="z.B. Mirjam Walenta, Team" value="'+(p.res.teilnehmer||'')+'"/>'):'')
     // Steuer-Ampel
     +(()=>{const a=p.res.steuer_ampel||'gelb';const map={gruen:{e:'🟢',t:'Beleg vollständig',c:'#D1FAE5',tc:'#065F46'},gelb:{e:'🟡',t:'Bitte prüfen',c:'#FEF3C7',tc:'#92400E'},rot:{e:'🔴',t:'Pflichtangaben fehlen',c:'#FEE2E2',tc:'#991B1B'}};const s=map[a]||map.gelb;return '<div style="background:'+s.c+';color:'+s.tc+';border-radius:8px;padding:9px 12px;font-size:12px;margin-top:12px;font-weight:600">'+s.e+' Steuer-Ampel: '+s.t+(p.res.ki_confidence?'&nbsp;&nbsp;·&nbsp;&nbsp;KI-Sicherheit: '+Math.round(p.res.ki_confidence*100)+'%':'')+'</div>';})()
@@ -1880,12 +1893,12 @@ function render(){
         // Zusatzfeld nur für Belege mit geschätzter MwSt: USt-Satz nachtragen, damit der
         // Beleg beim Speichern aus der Ausnahmeliste herausfällt.
         const ustNachtrag=istMwstGeschaetzt(b)?('<div style="font-size:11px;color:var(--red);margin-top:2px">⚠️ MwSt bisher geschätzt – USt-Satz nachtragen:</div><select class="inp" onchange="S.editData.ust_satz=this.value"><option value="">USt-Satz wählen…</option><option value="20">20 %</option><option value="10">10 %</option><option value="13">13 %</option><option value="0">0 % / befreit</option></select>'):'';
-        return'<div class="beleg-item"><div class="edit-form"><input class="inp" type="date" value="'+(S.editData.datum||'')+'" onchange="S.editData.datum=this.value"/><input class="inp" placeholder="Lieferant" value="'+(S.editData.lieferant||'')+'" oninput="S.editData.lieferant=this.value"/><input class="inp" placeholder="Beschreibung" value="'+(S.editData.beschreibung||'')+'" oninput="S.editData.beschreibung=this.value"/><div class="form-row"><input class="inp" placeholder="Betrag" value="'+(S.editData.betrag||'')+'" oninput="S.editData.betrag=this.value" style="flex:1"/><select class="inp" onchange="S.editData.art=this.value" style="flex:1"><option value="ausgabe"'+(S.editData.art==='ausgabe'?' selected':'')+'>Ausgabe</option><option value="einnahme"'+(S.editData.art==='einnahme'?' selected':'')+'>Einnahme</option></select></div><select class="inp" onchange="S.editData.kategorie=this.value">'+eO+'</select>'+(istBewirtung(S.editData.lieferant,S.editData.beschreibung)?'<input class="inp" placeholder="Anlass" value="'+(S.editData.anlass||'')+'" oninput="S.editData.anlass=this.value"/><input class="inp" placeholder="Teilnehmer" value="'+(S.editData.teilnehmer||'')+'" oninput="S.editData.teilnehmer=this.value"/>':'')+ustNachtrag+'<div class="edit-actions"><button class="btn-save" onclick="doEdit()">Speichern</button><button class="btn-cancel" onclick="S.editId=null;render()">Abbrechen</button></div></div></div>';
+        return'<div class="beleg-item"><div class="edit-form"><input class="inp" type="date" value="'+(S.editData.datum||'')+'" onchange="S.editData.datum=this.value"/><input class="inp" placeholder="Lieferant" value="'+(S.editData.lieferant||'')+'" oninput="S.editData.lieferant=this.value"/><input class="inp" placeholder="Beschreibung" value="'+(S.editData.beschreibung||'')+'" oninput="S.editData.beschreibung=this.value"/><div class="form-row"><input class="inp" placeholder="Betrag" value="'+(S.editData.betrag||'')+'" oninput="S.editData.betrag=this.value" style="flex:1"/><select class="inp" onchange="S.editData.art=this.value" style="flex:1"><option value="ausgabe"'+(S.editData.art==='ausgabe'?' selected':'')+'>Ausgabe</option><option value="einnahme"'+(S.editData.art==='einnahme'?' selected':'')+'>Einnahme</option></select></div><select class="inp" onchange="S.editData.kategorie=this.value">'+eO+'</select><select class="inp" onchange="S.editData.bezahlt_via=this.value">'+bezahltViaOptions(S.editData.bezahlt_via)+'</select>'+(istBewirtung(S.editData.lieferant,S.editData.beschreibung)?'<input class="inp" placeholder="Anlass" value="'+(S.editData.anlass||'')+'" oninput="S.editData.anlass=this.value"/><input class="inp" placeholder="Teilnehmer" value="'+(S.editData.teilnehmer||'')+'" oninput="S.editData.teilnehmer=this.value"/>':'')+ustNachtrag+'<div class="edit-actions"><button class="btn-save" onclick="doEdit()">Speichern</button><button class="btn-cancel" onclick="S.editId=null;render()">Abbrechen</button></div></div></div>';
       }
       const gwgBadge=istGwgKandidat(b)?'<span class="beleg-tag" style="background:#DCEEFA;color:#1D5C8A;margin-left:4px" title="Anschaffung im typischen GWG-Grenzbereich (grob 400–1500 €) — noch nicht als Anlage markiert">🔵 evtl. Anlagegut</span>':'';
       const bewirtBadge=(b.art==='ausgabe'&&istBewirtung(b.lieferant,b.beschreibung)&&!b.anlass)?'<span class="beleg-tag" style="background:#FFF3CD;color:#856404;margin-left:4px" title="Anlass/Teilnehmer für den Bewirtungsnachweis fehlen noch">🍽️ Anlass fehlt</span>':'';
       const pruefBadge=brauchtPruefung(b)?'<span class="beleg-tag" style="background:#FEE2E2;color:#991B1B;margin-left:4px" title="Noch nicht sauber genug für den Abschluss – manuell prüfen">🔶 Vor Abschluss prüfen — '+pruefGruende(b).join(', ')+'</span>':'';
-      return'<div class="beleg-item"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px"><div style="flex:1;min-width:0"><div><span class="beleg-tag" style="background:#7C6B8A1A;color:#7C6B8A">'+(k?.icon||'📦')+' '+(k?.label||'')+'</span><span style="font-size:10px;color:var(--ink3);margin-left:4px">'+b.datum+'</span>'+gwgBadge+bewirtBadge+pruefBadge+'</div><div class="beleg-name">'+(b.lieferant||'—')+'</div><div class="beleg-desc">'+(b.beschreibung||'')+(b.anlass?'<br><span style="color:var(--ink3)">Anlass: '+b.anlass+(b.teilnehmer?' · '+b.teilnehmer:'')+'</span>':'')+'</div></div><div class="beleg-amount" style="color:'+(b.art==='ausgabe'?'var(--red)':'var(--green)')+'">'+(b.art==='ausgabe'?'−':'+')+eur(b.betrag||0)+'</div></div><div class="beleg-actions"><button class="btn-sm btn-edit" onclick="S.editId=\''+b.id+'\';S.editData=Object.assign({},S.belege.find(x=>x.id===\''+b.id+'\'));render()">✏️ Bearbeiten</button><button class="btn-sm btn-del" onclick="if(confirm(\'Löschen?\'))deleteBelegDB(\''+b.id+'\').then(()=>render()).catch(e=>toast(\'Fehler: \'+e.message,\'err\'))">🗑️ Löschen</button></div></div>';
+      return'<div class="beleg-item"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px"><div style="flex:1;min-width:0"><div><span class="beleg-tag" style="background:#7C6B8A1A;color:#7C6B8A">'+(k?.icon||'📦')+' '+(k?.label||'')+'</span><span style="font-size:10px;color:var(--ink3);margin-left:4px">'+b.datum+' · '+bezahltViaLabel(b.bezahlt_via)+'</span>'+gwgBadge+bewirtBadge+pruefBadge+'</div><div class="beleg-name">'+(b.lieferant||'—')+'</div><div class="beleg-desc">'+(b.beschreibung||'')+(b.anlass?'<br><span style="color:var(--ink3)">Anlass: '+b.anlass+(b.teilnehmer?' · '+b.teilnehmer:'')+'</span>':'')+'</div></div><div class="beleg-amount" style="color:'+(b.art==='ausgabe'?'var(--red)':'var(--green)')+'">'+(b.art==='ausgabe'?'−':'+')+eur(b.betrag||0)+'</div></div><div class="beleg-actions"><button class="btn-sm btn-edit" onclick="S.editId=\''+b.id+'\';S.editData=Object.assign({},S.belege.find(x=>x.id===\''+b.id+'\'));render()">✏️ Bearbeiten</button><button class="btn-sm btn-del" onclick="if(confirm(\'Löschen?\'))deleteBelegDB(\''+b.id+'\').then(()=>render()).catch(e=>toast(\'Fehler: \'+e.message,\'err\'))">🗑️ Löschen</button></div></div>';
     }).join('');
     const hinweisChip=geschaetzteAlle.length?('<div onclick="S.filterGeschaetzt='+(!nurGeschaetzt)+';render()" style="background:#FEF3C7;color:#92400E;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:600;margin-bottom:12px;cursor:pointer">'+(nurGeschaetzt?'← zurück zu '+mL(S.monat):'⚠️ '+geschaetzteAlle.length+' Beleg(e) mit geschätzter MwSt · zum Nachbearbeiten anzeigen')+'</div>'):'';
     const kopfzeile='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-size:13px;color:var(--ink3)">'+listBasis.length+' Belege'+(nurGeschaetzt?' · geschätzte MwSt (alle Monate)':' · '+mL(S.monat))+'</div>'+(listBasis.length&&!nurGeschaetzt?'<button class="btn-outline" onclick="exportCSV()">📤 BMD-CSV</button>':'')+'</div>';
@@ -1914,7 +1927,7 @@ function render(){
          +'</div>')
       +'<input type="file" id="fi" accept=".pdf,image/*,.txt" multiple style="display:none" onchange="verarbeiteFileBulk(Array.from(this.files));this.value=\'\'"/>'
       +'<input type="file" id="fic" accept="image/*" capture="environment" style="display:none" onchange="verarbeiteFileBulk(Array.from(this.files));this.value=\'\'"/>'
-      +'<div class="card"><div class="section-title">Oder manuell eingeben</div><div class="form-group"><input class="inp" id="manuell-datum" type="date" value="'+S.manuell.datum+'" onchange="S.manuell.datum=this.value"/><input class="inp" id="manuell-lieferant" placeholder="Lieferant" value="'+S.manuell.lieferant+'" oninput="S.manuell.lieferant=this.value"/><input class="inp" id="manuell-beschreibung" placeholder="Beschreibung *" value="'+S.manuell.beschreibung+'" oninput="S.manuell.beschreibung=this.value"/><div class="form-row"><input class="inp" id="manuell-betrag" placeholder="Betrag *" inputmode="decimal" value="'+S.manuell.betrag+'" oninput="S.manuell.betrag=this.value" style="flex:1"/><select class="inp" id="manuell-art" onchange="S.manuell.art=this.value" style="flex:1"><option value="ausgabe">Ausgabe</option><option value="einnahme">Einnahme</option></select></div><select class="inp" id="manuell-kategorie" onchange="S.manuell.kategorie=this.value">'+mO+'</select><div class="form-row"><input class="inp" id="manuell-anlass" placeholder="Anlass (bei Bewirtung)" value="'+(S.manuell.anlass||'')+'" oninput="S.manuell.anlass=this.value" style="flex:1"/><input class="inp" id="manuell-teilnehmer" placeholder="Teilnehmer (bei Bewirtung)" value="'+(S.manuell.teilnehmer||'')+'" oninput="S.manuell.teilnehmer=this.value" style="flex:1"/></div><button class="btn-primary" onclick="doManuell()">Beleg speichern</button></div></div>';
+      +'<div class="card"><div class="section-title">Oder manuell eingeben</div><div class="form-group"><input class="inp" id="manuell-datum" type="date" value="'+S.manuell.datum+'" onchange="S.manuell.datum=this.value"/><input class="inp" id="manuell-lieferant" placeholder="Lieferant" value="'+S.manuell.lieferant+'" oninput="S.manuell.lieferant=this.value"/><input class="inp" id="manuell-beschreibung" placeholder="Beschreibung *" value="'+S.manuell.beschreibung+'" oninput="S.manuell.beschreibung=this.value"/><div class="form-row"><input class="inp" id="manuell-betrag" placeholder="Betrag *" inputmode="decimal" value="'+S.manuell.betrag+'" oninput="S.manuell.betrag=this.value" style="flex:1"/><select class="inp" id="manuell-art" onchange="S.manuell.art=this.value" style="flex:1"><option value="ausgabe">Ausgabe</option><option value="einnahme">Einnahme</option></select></div><select class="inp" id="manuell-kategorie" onchange="S.manuell.kategorie=this.value">'+mO+'</select><select class="inp" id="manuell-bezahlt-via" onchange="S.manuell.bezahlt_via=this.value">'+bezahltViaOptions(S.manuell.bezahlt_via)+'</select><div class="form-row"><input class="inp" id="manuell-anlass" placeholder="Anlass (bei Bewirtung)" value="'+(S.manuell.anlass||'')+'" oninput="S.manuell.anlass=this.value" style="flex:1"/><input class="inp" id="manuell-teilnehmer" placeholder="Teilnehmer (bei Bewirtung)" value="'+(S.manuell.teilnehmer||'')+'" oninput="S.manuell.teilnehmer=this.value" style="flex:1"/></div><button class="btn-primary" onclick="doManuell()">Beleg speichern</button></div></div>';
   }
 
   else if(ansicht==='tipps'){
@@ -2042,6 +2055,7 @@ async function doManuell(){
   const katEl=document.querySelector('#manuell-kategorie');
   const anlassEl=document.querySelector('#manuell-anlass');
   const teilnehmerEl=document.querySelector('#manuell-teilnehmer');
+  const bezahltViaEl=document.querySelector('#manuell-bezahlt-via');
   if(datumEl)S.manuell.datum=datumEl.value;
   if(lieferantEl)S.manuell.lieferant=lieferantEl.value;
   if(beschEl)S.manuell.beschreibung=beschEl.value;
@@ -2050,6 +2064,7 @@ async function doManuell(){
   if(katEl)S.manuell.kategorie=katEl.value;
   if(anlassEl)S.manuell.anlass=anlassEl.value;
   if(teilnehmerEl)S.manuell.teilnehmer=teilnehmerEl.value;
+  if(bezahltViaEl)S.manuell.bezahlt_via=bezahltViaEl.value;
   if(!S.manuell.betrag||!S.manuell.beschreibung){toast('Betrag und Beschreibung sind Pflichtfelder','err');return;}
   const betragNum=parseFloat(String(S.manuell.betrag).replace(',','.'));
   const datum=S.manuell.datum||new Date().toISOString().split('T')[0];
@@ -2061,13 +2076,13 @@ async function doManuell(){
   const kats=S.profile?.kategorien||DEFAULT_KATS;
   const monat=datum.substring(0,7);
   try{
-    await insertBeleg({datum,betrag:betragNum,art:S.manuell.art||'ausgabe',lieferant:S.manuell.lieferant||'',kategorie:S.manuell.kategorie||kats[0].id,beschreibung:S.manuell.beschreibung,monat,anlass:S.manuell.anlass||null,teilnehmer:S.manuell.teilnehmer||null});
+    await insertBeleg({datum,betrag:betragNum,art:S.manuell.art||'ausgabe',lieferant:S.manuell.lieferant||'',kategorie:S.manuell.kategorie||kats[0].id,beschreibung:S.manuell.beschreibung,monat,anlass:S.manuell.anlass||null,teilnehmer:S.manuell.teilnehmer||null,bezahlt_via:S.manuell.bezahlt_via||'geschaeftskonto'});
     S.manuell=emptyM();S.ansicht='belege';render();toast('Beleg gespeichert ✓');
   }catch(e){toast('Fehler beim Speichern: '+e.message,'err');}
 }
 async function doEdit(){
   const d=S.editData;
-  const payload={datum:d.datum,betrag:parseFloat(String(d.betrag).replace(',','.')),art:d.art,lieferant:d.lieferant,kategorie:d.kategorie,beschreibung:d.beschreibung,anlass:d.anlass||null,teilnehmer:d.teilnehmer||null};
+  const payload={datum:d.datum,betrag:parseFloat(String(d.betrag).replace(',','.')),art:d.art,lieferant:d.lieferant,kategorie:d.kategorie,beschreibung:d.beschreibung,anlass:d.anlass||null,teilnehmer:d.teilnehmer||null,bezahlt_via:d.bezahlt_via||'geschaeftskonto'};
   // Nur wenn der Beleg vor dem Bearbeiten als "MwSt geschätzt" galt und ein USt-Satz
   // nachgetragen wurde: netto/ust_betrag/ust_satz berechnen und mitspeichern, damit der
   // Beleg danach aus der Ausnahmeliste herausfällt. Normale Belege bleiben unangetastet.
