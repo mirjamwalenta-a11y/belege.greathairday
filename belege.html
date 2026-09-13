@@ -1234,8 +1234,24 @@ function vorverarbeiteCanvas(src){
   ctx.drawImage(src,0,0,c.width,c.height);
   return c;
 }
+// Ein einziger, wiederverwendeter Tesseract-Worker statt Tesseract.recognize() — das lädt
+// bei JEDEM Aufruf intern einen komplett neuen Worker samt deutschem Sprachmodell und beendet
+// ihn danach wieder. Bei einem Foto mit 4 Rotationsversuchen (siehe ocrBild) plus mehrseitigen
+// gescannten PDFs (extractPdfText) summiert sich das spürbar — vor allem im Bulk-Upload mit
+// mehreren Belegen hintereinander.
+let _tesseractWorker=null,_tesseractWorkerPromise=null;
+async function getTesseractWorker(){
+  if(_tesseractWorker)return _tesseractWorker;
+  if(!_tesseractWorkerPromise){
+    _tesseractWorkerPromise=Tesseract.createWorker('deu',1,{logger:()=>{}})
+      .then(w=>{_tesseractWorker=w;return w;})
+      .catch(e=>{_tesseractWorkerPromise=null;throw e;}); // bei Fehlschlag erneuten Versuch zulassen
+  }
+  return _tesseractWorkerPromise;
+}
 async function ocrCanvas(canvas){
-  const result=await Tesseract.recognize(canvas,'deu',{logger:()=>{}});
+  const worker=await getTesseractWorker();
+  const result=await worker.recognize(canvas);
   return result?.data?.text||null;
 }
 function ocrScore(t){
