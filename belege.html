@@ -1003,6 +1003,20 @@ function analyzeLokal(text,filename){
 
   return{datum,zahlungsdatum,betrag,netto,ust_betrag,ust_satz,art:'ausgabe',lieferant:lieferant.substring(0,60),uid_lieferant,rechnungsnummer,vorsteuer_moeglich,steuer_ampel,kategorie,beschreibung:filename.replace(/\.[^.]+$/,'').substring(0,60)};
 }
+// Ergänzt fehlende Felder in einem KI-Ergebnis aus der lokalen Regex-Analyse (analyzeLokal).
+// Läuft nach JEDEM erfolgreichen KI-Aufruf als Sicherheitsnetz — überschreibt nie einen von der
+// KI tatsächlich gelieferten Wert, füllt nur echte Lücken (null bzw. Betrag<=0). Nötig, weil die
+// KI bei ungewöhnlich aufgebauten Belegen (z.B. Miet-/Abo-Rechnungen mit zwei "Gesamtbetrag"-
+// Blöcken) manchmal sogar den Betrag selbst nicht findet, obwohl die lokale Mustererkennung ihn
+// zuverlässig erkennt (siehe z.B. eine CWS-Mietrechnung, die die KI mit leerem Betrag zurückgab).
+function ergaenzeAusLokal(res,text,filename){
+  const lokal=analyzeLokal(text,filename);
+  if(!(parseFloat(res.betrag)>0)&&lokal.betrag>0)res.betrag=lokal.betrag;
+  if(res.netto==null&&lokal.netto!=null)res.netto=lokal.netto;
+  if(res.ust_betrag==null&&lokal.ust_betrag!=null)res.ust_betrag=lokal.ust_betrag;
+  if(res.ust_satz==null&&lokal.ust_satz!=null)res.ust_satz=lokal.ust_satz;
+  return res;
+}
 // ── Claude ────────────────────────────────────────────────────────────────────
 // Bei mehrseitigen Rechnungen (z.B. Lieferantenrechnungen mit vielen Positionen)
 // steht der Rechnungsendbetrag typischerweise erst auf der LETZTEN Seite, während
@@ -1397,18 +1411,7 @@ async function verarbeiteFile(file){
     if(!res){
       try{
         res=await analyzeClaude(textBereinigt,file.name);
-        // Gezielter Steuerfeld-Fallback: Claude war erfolgreich, hat aber keine MwSt-Angaben
-        // gefunden. Die lokale Regex-Erkennung bekommt denselben Text oft trotzdem sauber
-        // ausgewertet — deshalb hier NUR netto/ust_betrag/ust_satz nachziehen, alle anderen
-        // von Claude erkannten Felder bleiben unverändert.
-        if(res.netto==null&&res.ust_betrag==null&&res.ust_satz==null){
-          const lokal=analyzeLokal(textBereinigt,file.name);
-          if(lokal.netto!=null||lokal.ust_betrag!=null||lokal.ust_satz!=null){
-            res.netto=lokal.netto;
-            res.ust_betrag=lokal.ust_betrag;
-            res.ust_satz=lokal.ust_satz;
-          }
-        }
+        res=ergaenzeAusLokal(res,textBereinigt,file.name);
       }
       catch(e){
         // Kein API-Key oder Fehler → lokale Analyse aus PDF-Text
@@ -1561,17 +1564,7 @@ async function verarbeiteFileBulk(files){
       if(!res){
         try{
           res=await analyzeClaude(textB,file.name);
-          // Gleicher gezielter Steuerfeld-Fallback wie im Einzel-Upload (verarbeiteFile):
-          // Claude erfolgreich, aber keine MwSt-Angaben gefunden → nur netto/ust_betrag/ust_satz
-          // aus der lokalen Analyse nachziehen, alle übrigen Claude-Felder unverändert lassen.
-          if(res.netto==null&&res.ust_betrag==null&&res.ust_satz==null){
-            const lokal=analyzeLokal(textB,file.name);
-            if(lokal.netto!=null||lokal.ust_betrag!=null||lokal.ust_satz!=null){
-              res.netto=lokal.netto;
-              res.ust_betrag=lokal.ust_betrag;
-              res.ust_satz=lokal.ust_satz;
-            }
-          }
+          res=ergaenzeAusLokal(res,textB,file.name);
         }
         catch(e){res=analyzeLokal(textB,file.name);}
       }
