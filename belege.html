@@ -1953,10 +1953,21 @@ async function boot(){
 // ── Warn-Logik ────────────────────────────────────────────────────────────────
 function pruefNichtRechnung(text,filename){
   const tl=(text+' '+filename).toLowerCase();
+  // Starke Rechnungsmerkmale zuerst prüfen: hat das Dokument eine Rechnungsnummer UND eine
+  // USt-Aufschlüsselung (Netto/USt/Brutto-Tabelle oder USt-/MwSt-Satz), ist es so gut wie sicher
+  // eine echte Rechnung — auch wenn nebenbei mal ein Wort wie "Angebot" oder "Lieferung" im
+  // Fließtext vorkommt (z.B. "weitere Informationen sind dem Angebot zu entnehmen", "steuerfreie
+  // innergemeinschaftliche Lieferung"). Ohne diese Ausnahme wurden echte Rechnungen (u.a. eine
+  // normale Magenta-Rechnung wegen des Worts "Angebot" in einem Nebensatz) fälschlich verworfen.
+  const hatRechnungsnummer=/rechnungs-?nr\.?|rechnungsnummer/i.test(tl);
+  const hatUstAufschluesselung=/netto\s*€|brutto\s*€|ust\.?\s*%|ust[- ]?satz|mwst[- ]?satz/i.test(tl);
+  if(hatRechnungsnummer&&hatUstAufschluesselung)return false;
+  // Nur eindeutige, spezifische Dokumenttyp-Begriffe — bewusst KEINE einzelnen Alltagswörter wie
+  // "Angebot" oder "Lieferung", die auch in normalen Rechnungen beiläufig vorkommen.
   const signale=[
-    'zahlungsavis','avis','mahnung','mahnschreiben','zahlungserinnerung',
-    'lieferschein','lieferung','bestellbestaetigung','bestellbestätigung',
-    'auftragsbestaetigung','auftragsbestätigung','proforma','angebot',
+    'zahlungsavis','mahnung','mahnschreiben','zahlungserinnerung',
+    'lieferschein','bestellbestaetigung','bestellbestätigung',
+    'auftragsbestaetigung','auftragsbestätigung','proforma',
     'kostenvoranschlag','gutschrift ohne steuer','versandbestaetigung',
     'versandbestätigung','packing list','delivery note'
   ];
