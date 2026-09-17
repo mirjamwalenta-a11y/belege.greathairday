@@ -1963,10 +1963,14 @@ function pruefNichtRechnung(text,filename){
   const hatUstAufschluesselung=/netto\s*€|brutto\s*€|ust\.?\s*%|ust[- ]?satz|mwst[- ]?satz/i.test(tl);
   if(hatRechnungsnummer&&hatUstAufschluesselung)return false;
   // Nur eindeutige, spezifische Dokumenttyp-Begriffe — bewusst KEINE einzelnen Alltagswörter wie
-  // "Angebot" oder "Lieferung", die auch in normalen Rechnungen beiläufig vorkommen.
+  // "Angebot" oder "Lieferung", die auch in normalen Rechnungen beiläufig vorkommen. "lieferschein"
+  // ebenfalls entfernt: Warenrechnungen referenzieren fast immer ihre eigene Lieferscheinnummer
+  // ("Lieferscheinnr./Datum"), ohne selbst ein Lieferschein zu sein — das hat z.B. eine echte
+  // L'Oréal-Rechnung fälschlich verworfen. Ein eigenständiger Lieferschein hat ohnehin meist keinen
+  // Rechnungsbetrag, landet also schon über die separate "Betrag nicht erkannt"-Prüfung im Fehler.
   const signale=[
     'zahlungsavis','mahnung','mahnschreiben','zahlungserinnerung',
-    'lieferschein','bestellbestaetigung','bestellbestätigung',
+    'bestellbestaetigung','bestellbestätigung',
     'auftragsbestaetigung','auftragsbestätigung','proforma',
     'kostenvoranschlag','gutschrift ohne steuer','versandbestaetigung',
     'versandbestätigung','packing list','delivery note'
