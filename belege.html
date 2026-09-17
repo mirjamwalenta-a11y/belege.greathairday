@@ -227,7 +227,7 @@ let S={
   draft:null,
   tipps:null,tippsDatum:null,tippsLoading:false,
   bulkQueue:[],bulkTotal:0,bulkDone:0,bulkFehlerFiles:[],bulkModus:false,
-  filterGeschaetzt:false,
+  filterPruefung:false,
 };
 
 function emptyM(){return{datum:'',betrag:'',art:'ausgabe',lieferant:'',kategorie:'',beschreibung:'',anlass:'',teilnehmer:'',bezahlt_via:'geschaeftskonto'};}
@@ -2173,12 +2173,14 @@ function render(){
   }
 
   else if(ansicht==='belege'){
-    // Nachbearbeitungs-Filter: sammelt Belege mit geschätzter MwSt monatsübergreifend,
-    // damit man sie nicht Monat für Monat einzeln suchen muss. Nur sichtbar/aktivierbar,
+    // Nachbearbeitungs-Filter: sammelt ALLE Belege, die noch geprüft werden müssen
+    // (brauchtPruefung: geschätzte MwSt, unklare Vorsteuer ODER fehlende Pflichtangaben),
+    // monatsübergreifend — damit man nach einem Bulk-Upload nicht alle gespeicherten Belege
+    // einzeln durchklicken muss, um die paar mit Prüfbedarf zu finden. Nur sichtbar/aktivierbar,
     // wenn es überhaupt welche gibt.
-    const geschaetzteAlle=S.belege.filter(istMwstGeschaetzt);
-    const nurGeschaetzt=!!S.filterGeschaetzt&&geschaetzteAlle.length>0;
-    const listBasis=nurGeschaetzt?geschaetzteAlle:bfm;
+    const pruefAlle=S.belege.filter(brauchtPruefung);
+    const nurPruef=!!S.filterPruefung&&pruefAlle.length>0;
+    const listBasis=nurPruef?pruefAlle:bfm;
     const items=listBasis.map(b=>{
       const k=kk(b.kategorie);
       if(String(S.editId)===String(b.id)){
@@ -2193,9 +2195,9 @@ function render(){
       const pruefBadge=brauchtPruefung(b)?'<span class="beleg-tag" style="background:#FEE2E2;color:#991B1B;margin-left:4px" title="Noch nicht sauber genug für den Abschluss – manuell prüfen">🔶 Vor Abschluss prüfen — '+pruefGruende(b).join(', ')+'</span>':'';
       return'<div class="beleg-item"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px"><div style="flex:1;min-width:0"><div><span class="beleg-tag" style="background:#7C6B8A1A;color:#7C6B8A">'+(k?.icon||'📦')+' '+(k?.label||'')+'</span><span style="font-size:10px;color:var(--ink3);margin-left:4px">'+b.datum+' · '+bezahltViaLabel(b.bezahlt_via)+'</span>'+gwgBadge+bewirtBadge+pruefBadge+'</div><div class="beleg-name">'+(b.lieferant||'—')+'</div><div class="beleg-desc">'+(b.beschreibung||'')+(b.anlass?'<br><span style="color:var(--ink3)">Anlass: '+b.anlass+(b.teilnehmer?' · '+b.teilnehmer:'')+'</span>':'')+'</div></div><div class="beleg-amount" style="color:'+(b.art==='ausgabe'?'var(--red)':'var(--green)')+'">'+(b.art==='ausgabe'?'−':'+')+eur(b.betrag||0)+'</div></div><div class="beleg-actions">'+(b.datei_url?'<button class="btn-sm" onclick="belegDateiAnsehen(\''+b.datei_url+'\')">📄 Beleg ansehen</button>':'')+'<button class="btn-sm btn-edit" onclick="S.editId=\''+b.id+'\';S.editData=Object.assign({},S.belege.find(x=>x.id===\''+b.id+'\'));render()">✏️ Bearbeiten</button><button class="btn-sm btn-del" onclick="if(confirm(\'Löschen?\'))deleteBelegDB(\''+b.id+'\').then(()=>render()).catch(e=>toast(\'Fehler: \'+e.message,\'err\'))">🗑️ Löschen</button></div></div>';
     }).join('');
-    const hinweisChip=geschaetzteAlle.length?('<div onclick="S.filterGeschaetzt='+(!nurGeschaetzt)+';render()" style="background:#FEF3C7;color:#92400E;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:600;margin-bottom:12px;cursor:pointer">'+(nurGeschaetzt?'← zurück zu '+mL(S.monat):'⚠️ '+geschaetzteAlle.length+' Beleg(e) mit geschätzter MwSt · zum Nachbearbeiten anzeigen')+'</div>'):'';
-    const kopfzeile='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-size:13px;color:var(--ink3)">'+listBasis.length+' Belege'+(nurGeschaetzt?' · geschätzte MwSt (alle Monate)':' · '+mL(S.monat))+'</div>'+(listBasis.length&&!nurGeschaetzt?'<button class="btn-outline" onclick="exportCSV()">📤 BMD-CSV</button>':'')+'</div>';
-    inhalt=hinweisChip+kopfzeile+(listBasis.length===0?'<div class="empty"><div class="empty-icon">🗂️</div><div style="font-size:14px">'+(nurGeschaetzt?'Keine Belege mit geschätzter MwSt mehr.':'Keine Belege in diesem Monat.')+'</div></div>':items);
+    const hinweisChip=pruefAlle.length?('<div onclick="S.filterPruefung='+(!nurPruef)+';render()" style="background:#FEE2E2;color:#991B1B;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:600;margin-bottom:12px;cursor:pointer">'+(nurPruef?'← zurück zu '+mL(S.monat):'🔶 '+pruefAlle.length+' Beleg(e) brauchen Prüfung vor Abschluss · anzeigen')+'</div>'):'';
+    const kopfzeile='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-size:13px;color:var(--ink3)">'+listBasis.length+' Belege'+(nurPruef?' · brauchen Prüfung (alle Monate)':' · '+mL(S.monat))+'</div>'+(listBasis.length&&!nurPruef?'<button class="btn-outline" onclick="exportCSV()">📤 BMD-CSV</button>':'')+'</div>';
+    inhalt=hinweisChip+kopfzeile+(listBasis.length===0?'<div class="empty"><div class="empty-icon">🗂️</div><div style="font-size:14px">'+(nurPruef?'Keine Belege mehr, die geprüft werden müssen.':'Keine Belege in diesem Monat.')+'</div></div>':items);
   }
 
   else if(ansicht==='neu'){
