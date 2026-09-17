@@ -1575,13 +1575,27 @@ async function verarbeiteFileBulk(files){
         }
         catch(e){res=analyzeLokal(textB,file.name);}
       }
+      // Gleiche Vorsteuer-Nachbearbeitung wie im Einzel-Upload (verarbeiteFile) — sonst gilt
+      // die Kleinbetragsrechnungs-Korrektur nur für Dateien, die einzeln hochgeladen werden.
+      if(res.vorsteuer_moeglich==='unklar'){
+        const nachgerechnet=vorsteuerMoeglichAusFeldern(res.betrag,res.ust_satz,res.ust_betrag,res.uid_lieferant,res.betrieblich);
+        if(nachgerechnet==='ja')res.vorsteuer_moeglich='ja';
+      }
       const kats=S.profile?.kategorien||DEFAULT_KATS;
       const datum=res.datum||new Date().toISOString().split('T')[0];
       // Zahlungsmonat hat Vorrang für die Monatszuordnung, wenn erkannt — sonst wie bisher Belegdatum.
       const zahlungsdatum=res.zahlungsdatum||null;
       const monat=(zahlungsdatum||datum).substring(0,7);
       const betrag=parseFloat(res.betrag)||0;
-      if(betrag>0){
+      // Belege, die eher wie Zahlungsavis/Mahnung/Lieferschein aussehen (siehe pruefNichtRechnung,
+      // sonst nur im Einzel-Upload geprüft), NICHT blind automatisch speichern: solche Dokumente
+      // haben oft mehrere ähnliche Beträge (Rechnungsbetrag vor/nach Skonto, Zahlbetrag) und keine
+      // USt-Angaben — die Bulk-Erkennung kann daraus leicht den falschen Betrag übernehmen, ohne
+      // dass es auffällt. Stattdessen in die Fehlerliste, von wo aus "Erneut versuchen" bei einer
+      // einzelnen Datei automatisch die Einzel-Prüfansicht (mit Dokument-Vorschau) öffnet.
+      if(pruefNichtRechnung(textB,file.name)){
+        S.bulkFehlerFiles.push({file,name:file.name,grund:'Kein eindeutiges Rechnungsformat (z.B. Zahlungsavis/Mahnung) – bitte einzeln prüfen'});
+      }else if(betrag>0){
         // Dubletten im Bulk-Modus NICHT speichern (statt hinterher zu warnen) — sonst muss
         // jede erkannte Dublette händisch wieder gelöscht werden. Der Durchlauf selbst wird
         // dadurch nicht unterbrochen, es entfällt nur der insertBeleg-Aufruf für diese Datei.
@@ -1854,6 +1868,23 @@ async function fetchBelegDatei(url){
   if(r.status===401){await refreshToken();r=await fetch(url,{headers:{apikey:SB_KEY,Authorization:'Bearer '+S.token}});}
   if(!r.ok)throw new Error('HTTP '+r.status);
   return await r.blob();
+}
+// Öffnet die Originaldatei eines gespeicherten Belegs (PDF/Foto) in einem neuen Tab, damit
+// Betrag/Datum auch nachträglich gegen das Original geprüft werden können — bisher gab es
+// dafür in der Belege-Liste keine Möglichkeit, nur beim Hochladen selbst (Prüfansicht).
+// Tab SYNCHRON öffnen (vor dem await), sonst blockieren Safari/iPad den nachträglichen
+// window.open nach einem asynchronen fetch als Popup.
+async function belegDateiAnsehen(url){
+  if(!url){toast('Keine Datei zu diesem Beleg hinterlegt','err');return;}
+  const win=window.open('','_blank');
+  try{
+    const blob=await fetchBelegDatei(url);
+    if(win)win.location.href=URL.createObjectURL(blob);
+    else toast('Popup blockiert – bitte Popups für diese Seite erlauben','err');
+  }catch(e){
+    if(win)win.close();
+    toast('Datei konnte nicht geladen werden: '+e.message,'err');
+  }
 }
 function extFuerBelegDatei(blob,dateiname){
   const map={'image/jpeg':'jpg','image/png':'png','image/webp':'webp','application/pdf':'pdf'};
@@ -2152,7 +2183,7 @@ function render(){
       const gwgBadge=istGwgKandidat(b)?'<span class="beleg-tag" style="background:#DCEEFA;color:#1D5C8A;margin-left:4px" title="Anschaffung im typischen GWG-Grenzbereich (grob 400–1500 €) — noch nicht als Anlage markiert">🔵 evtl. Anlagegut</span>':'';
       const bewirtBadge=(b.art==='ausgabe'&&istBewirtung(b.lieferant,b.beschreibung)&&!b.anlass)?'<span class="beleg-tag" style="background:#FFF3CD;color:#856404;margin-left:4px" title="Anlass/Teilnehmer für den Bewirtungsnachweis fehlen noch">🍽️ Anlass fehlt</span>':'';
       const pruefBadge=brauchtPruefung(b)?'<span class="beleg-tag" style="background:#FEE2E2;color:#991B1B;margin-left:4px" title="Noch nicht sauber genug für den Abschluss – manuell prüfen">🔶 Vor Abschluss prüfen — '+pruefGruende(b).join(', ')+'</span>':'';
-      return'<div class="beleg-item"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px"><div style="flex:1;min-width:0"><div><span class="beleg-tag" style="background:#7C6B8A1A;color:#7C6B8A">'+(k?.icon||'📦')+' '+(k?.label||'')+'</span><span style="font-size:10px;color:var(--ink3);margin-left:4px">'+b.datum+' · '+bezahltViaLabel(b.bezahlt_via)+'</span>'+gwgBadge+bewirtBadge+pruefBadge+'</div><div class="beleg-name">'+(b.lieferant||'—')+'</div><div class="beleg-desc">'+(b.beschreibung||'')+(b.anlass?'<br><span style="color:var(--ink3)">Anlass: '+b.anlass+(b.teilnehmer?' · '+b.teilnehmer:'')+'</span>':'')+'</div></div><div class="beleg-amount" style="color:'+(b.art==='ausgabe'?'var(--red)':'var(--green)')+'">'+(b.art==='ausgabe'?'−':'+')+eur(b.betrag||0)+'</div></div><div class="beleg-actions"><button class="btn-sm btn-edit" onclick="S.editId=\''+b.id+'\';S.editData=Object.assign({},S.belege.find(x=>x.id===\''+b.id+'\'));render()">✏️ Bearbeiten</button><button class="btn-sm btn-del" onclick="if(confirm(\'Löschen?\'))deleteBelegDB(\''+b.id+'\').then(()=>render()).catch(e=>toast(\'Fehler: \'+e.message,\'err\'))">🗑️ Löschen</button></div></div>';
+      return'<div class="beleg-item"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px"><div style="flex:1;min-width:0"><div><span class="beleg-tag" style="background:#7C6B8A1A;color:#7C6B8A">'+(k?.icon||'📦')+' '+(k?.label||'')+'</span><span style="font-size:10px;color:var(--ink3);margin-left:4px">'+b.datum+' · '+bezahltViaLabel(b.bezahlt_via)+'</span>'+gwgBadge+bewirtBadge+pruefBadge+'</div><div class="beleg-name">'+(b.lieferant||'—')+'</div><div class="beleg-desc">'+(b.beschreibung||'')+(b.anlass?'<br><span style="color:var(--ink3)">Anlass: '+b.anlass+(b.teilnehmer?' · '+b.teilnehmer:'')+'</span>':'')+'</div></div><div class="beleg-amount" style="color:'+(b.art==='ausgabe'?'var(--red)':'var(--green)')+'">'+(b.art==='ausgabe'?'−':'+')+eur(b.betrag||0)+'</div></div><div class="beleg-actions">'+(b.datei_url?'<button class="btn-sm" onclick="belegDateiAnsehen(\''+b.datei_url+'\')">📄 Beleg ansehen</button>':'')+'<button class="btn-sm btn-edit" onclick="S.editId=\''+b.id+'\';S.editData=Object.assign({},S.belege.find(x=>x.id===\''+b.id+'\'));render()">✏️ Bearbeiten</button><button class="btn-sm btn-del" onclick="if(confirm(\'Löschen?\'))deleteBelegDB(\''+b.id+'\').then(()=>render()).catch(e=>toast(\'Fehler: \'+e.message,\'err\'))">🗑️ Löschen</button></div></div>';
     }).join('');
     const hinweisChip=geschaetzteAlle.length?('<div onclick="S.filterGeschaetzt='+(!nurGeschaetzt)+';render()" style="background:#FEF3C7;color:#92400E;border-radius:8px;padding:8px 12px;font-size:12px;font-weight:600;margin-bottom:12px;cursor:pointer">'+(nurGeschaetzt?'← zurück zu '+mL(S.monat):'⚠️ '+geschaetzteAlle.length+' Beleg(e) mit geschätzter MwSt · zum Nachbearbeiten anzeigen')+'</div>'):'';
     const kopfzeile='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><div style="font-size:13px;color:var(--ink3)">'+listBasis.length+' Belege'+(nurGeschaetzt?' · geschätzte MwSt (alle Monate)':' · '+mL(S.monat))+'</div>'+(listBasis.length&&!nurGeschaetzt?'<button class="btn-outline" onclick="exportCSV()">📤 BMD-CSV</button>':'')+'</div>';
