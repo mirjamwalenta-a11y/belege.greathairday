@@ -660,6 +660,19 @@ function pdfLeseReihenfolge(tc){
   zeilen.sort((a,b)=>b.y-a.y);
   return zeilen.map(z=>z.items.sort((a,b)=>a.x-b.x).map(i=>i.str).join(' ').replace(/\s+/g,' ').trim()).filter(Boolean).join('\n');
 }
+// ── Vorsteuer-Regel (österr. Kleinbetragsrechnung) ─────────────────────────────
+// Einzige Quelle für die Vorsteuer-Plausibilitätsprüfung, damit lokale Analyse (analyzeLokal)
+// und die Nachbearbeitung der KI-Antwort (verarbeiteFile) nicht auseinanderdriften.
+// Bis 400€ inkl. USt reichen vereinfachte Rechnungsangaben (§11 Abs.6 UStG) — keine
+// Ausstellerin-UID nötig; darüber braucht es UID für den vollen Vorsteuerabzug.
+const VORSTEUER_KLEINBETRAG=400;
+function vorsteuerMoeglichAusFeldern(betrag,ust_satz,ust_betrag,uid_lieferant,betrieblich){
+  if(betrieblich==='nein')return'nein';
+  if(ust_satz===0)return'nein';
+  const hatUst=ust_satz!=null||ust_betrag!=null;
+  if(hatUst&&(uid_lieferant||(betrag||0)<=VORSTEUER_KLEINBETRAG))return'ja';
+  return'unklar';
+}
 // ── Lokale Analyse (ohne API-Key) ──────────────────────────────────────────────
 function analyzeLokal(text,filename){
   const kats=S.profile?.kategorien||DEFAULT_KATS;
@@ -974,16 +987,9 @@ function analyzeLokal(text,filename){
   // (österr. Kleinbetragsrechnung bis 400€ inkl. USt: vereinfachte Angaben reichen,
   // keine Ausstellerin-UID nötig; darüber braucht es UID + Rechnungsnummer für den
   // vollen Vorsteuerabzug)
-  const KLEINBETRAG=400;
+  const KLEINBETRAG=VORSTEUER_KLEINBETRAG;
   const hatUst=ust_satz!=null||ust_betrag!=null;
-  let vorsteuer_moeglich='unklar';
-  if(ust_satz===0){
-    vorsteuer_moeglich='nein';
-  }else if(hatUst&&(uid_lieferant||betrag<=KLEINBETRAG)){
-    vorsteuer_moeglich='ja';
-  }else if(!hatUst&&betrag>0){
-    vorsteuer_moeglich='unklar';
-  }
+  const vorsteuer_moeglich=vorsteuerMoeglichAusFeldern(betrag,ust_satz,ust_betrag,uid_lieferant,null);
 
   let steuer_ampel='gelb';
   // Grün nur, wenn wirklich alles Wesentliche erkannt wurde — inkl. USt-Info (sonst zu optimistisch)
@@ -1069,7 +1075,7 @@ Regeln:
 - kategorie: NUR eine dieser IDs: ${kats.map(k=>k.id+'='+k.label).join(', ')}
 - betrieblich: "ja" wenn klar betrieblich (Friseurbedarfs-Lieferant, Salon-Rechnung), "nein" wenn klar privat, "gemischt" wenn beides möglich (z.B. Mobiltelefon, Auto)
 - betrieblicher_anteil: Prozentzahl (z.B. 50) nur wenn betrieblich="gemischt", sonst null
-- vorsteuer_moeglich: "ja" wenn Rechnung mit USt-Ausweis und betriebliche Nutzung, "nein" wenn Kassabon ohne UID-Ausweis oder eindeutig privat, "unklar" wenn nicht sicher beurteilbar
+- vorsteuer_moeglich: österreichische Kleinbetragsrechnung (Gesamtbetrag bis 400€ inkl. USt, z.B. die meisten Kassenbons) braucht laut §11 Abs.6 UStG KEINE Lieferanten-UID für den Vorsteuerabzug — Ausweis von USt-Betrag oder USt-Satz reicht. Deshalb: "ja" wenn USt-Betrag oder USt-Satz erkennbar ist UND (betrag<=400 ODER UID des Ausstellers vorhanden) UND betrieblich nicht "nein". "nein" wenn USt-Satz erkennbar 0% ist, oder eindeutig privat, oder betrag>400 und weder USt-Ausweis noch UID vorhanden. "unklar" NUR wenn wirklich kein USt-Betrag/-Satz auf dem Beleg erkennbar ist (z.B. reiner Zahlungsbeleg ohne Steuerangaben) — bei erkennbarer USt und betrag<=400 NIEMALS "unklar" wegen fehlender UID vergeben.
 - ist_anlage: true wenn Einzelwert voraussichtlich über 1000 EUR und längerfristig nutzbar (Geräte, Maschinen, Einrichtung), sonst false
 - ki_confidence: Gesamtsicherheit für diesen Beleg von 0.00 bis 1.00 (1.00 = alle Felder eindeutig erkannt)
 - steuer_ampel: "gruen" wenn Rechnung vollständig und steuerlich klar, "gelb" wenn Felder fehlen oder Beurteilung unsicher, "rot" wenn wichtige Pflichtangaben fehlen oder steuerlich problematisch`;
@@ -1411,6 +1417,14 @@ async function verarbeiteFile(file){
         console.warn('KI-Erkennung fehlgeschlagen, nutze lokale Analyse:',kiFehler);
         res=analyzeLokal(textBereinigt,file.name);
       }
+    }
+    // Vorsteuer-Nachbearbeitung: die KI kennt die österr. Kleinbetragsrechnungs-Schwelle
+    // (bis 400€ inkl. USt keine Lieferanten-UID nötig) nicht immer zuverlässig und markiert
+    // sonst zu viele gültige Kassenbons unnötig als "unklar". Nur "unklar" -> "ja" hochstufen,
+    // eine bewusste KI-Einstufung "ja"/"nein" wird nie überschrieben.
+    if(res.vorsteuer_moeglich==='unklar'){
+      const nachgerechnet=vorsteuerMoeglichAusFeldern(res.betrag,res.ust_satz,res.ust_betrag,res.uid_lieferant,res.betrieblich);
+      if(nachgerechnet==='ja')res.vorsteuer_moeglich='ja';
     }
     const kats=S.profile?.kategorien||DEFAULT_KATS;
     // Prüfansicht öffnen statt sofort speichern
