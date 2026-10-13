@@ -6,6 +6,7 @@
   <meta name="theme-color" content="#1c1917">
   <meta charset="UTF-8"/>
   <script src="https://mirjamwalenta-a11y.github.io/abwesenheiten-ghd/ghd-sitzung.js" data-schluessel="sb_token,sb_uid,sb_refresh"></script>  <!-- automatisch abmelden nach 15 min ohne Bedienung -->
+<script src="https://mirjamwalenta-a11y.github.io/abwesenheiten-ghd/ghd-offline.js" data-schluessel="sb_token,sb_uid,sb_refresh"></script>  <!-- offline nutzbar: Service Worker, gemerkte Daten, Nachsync -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
   <meta name="mobile-web-app-capable" content="yes"/>
   <meta name="apple-mobile-web-app-capable" content="yes"/>
@@ -285,7 +286,10 @@ function toast(msg,type='ok'){
 // ── API calls ─────────────────────────────────────────────────────────────────
 async function loadProfile(){
   const d=await sbGet('/rest/v1/profiles?id=eq.'+S.userId+'&select=*',S.token);
-  if(Array.isArray(d)&&d.length>0){S.profile=d[0];return true;}
+  // Fehler (z. B. offline und noch nie geladen) ist NICHT „kein Profil“ – sonst würde die
+  // Einrichtung angeboten und ein bestehendes Profil überschrieben
+  if(!Array.isArray(d))throw new Error((d&&d.message)||'Profil konnte nicht geladen werden');
+  if(d.length>0){S.profile=d[0];return true;}
   return false;
 }
 async function upsertProfile(data){
