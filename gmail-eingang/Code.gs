@@ -9,6 +9,8 @@
 // Zugangsdaten stehen NICHT hier, sondern unter Projekteinstellungen → Skripteigenschaften:
 //   FUNKTION_URL   = https://<projekt>.supabase.co/functions/v1/beleg-eingang
 //   EINGANG_TOKEN  = derselbe geheime Wert wie das Supabase-Secret EINGANG_TOKEN
+//   SUPABASE_KEY   = Publishable key des Projekts (sb_publishable_…, Project Settings → API Keys);
+//                    das Supabase-Gateway verlangt ihn, solange die JWT-Prüfung der Funktion an ist
 
 const LABEL_NEU = 'Belege';
 const LABEL_ERLEDIGT = 'Belege-erledigt';
@@ -16,10 +18,6 @@ const SUCHWOERTER = ['Rechnung', 'Invoice', 'Faktura', 'Gutschrift', 'Beleg'];
 const ERLAUBT = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'image/heic'];
 const MIN_BILD_BYTES = 30 * 1024; // kleinere Bilder sind fast immer Logos oder Signaturen
 const MAX_BYTES = 10 * 1024 * 1024;
-// Öffentlicher anon-Key des Supabase-Projekts (steht ohnehin in belege.html, kein Geheimnis).
-// Das Supabase-Gateway verlangt ihn auch bei Funktionen ohne JWT-Prüfung; den eigentlichen
-// Schutz macht das geheime EINGANG_TOKEN.
-const ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxwdXh2dmZycmNuYnV6YWZzY3lrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ2ODIxNDcsImV4cCI6MjEwMDI1ODE0N30.6VZUmmXj_x3Q8J55s_tbOHcW5-U5OXllGoEBhypaVfI';
 
 // Einmal von Hand ausführen: legt die Labels an, merkt sich das Startdatum (ältere Mails
 // werden nicht automatisch geholt) und startet den 15-Minuten-Zeitplan.
@@ -39,7 +37,7 @@ function einrichten() {
 }
 
 function belegeAbholen() {
-  const { url, token } = einstellungen_();
+  const { url, token, apikey } = einstellungen_();
   const neu = label_(LABEL_NEU);
   const erledigt = label_(LABEL_ERLEDIGT);
   const start = PropertiesService.getScriptProperties().getProperty('START');
@@ -64,10 +62,12 @@ function belegeAbholen() {
         .map(({ a, mime }) => ({ name: a.getName(), mime, base64: Utilities.base64Encode(a.getBytes()) }));
       if (!dateien.length) return;
 
+      const headers = { 'x-eingang-token': token };
+      if (apikey) headers['apikey'] = apikey;
       const antwort = UrlFetchApp.fetch(url, {
         method: 'post',
         contentType: 'application/json',
-        headers: { 'x-eingang-token': token, 'apikey': ANON_KEY, 'Authorization': 'Bearer ' + ANON_KEY },
+        headers,
         payload: JSON.stringify({ message_id: msg.getId(), absender: msg.getFrom(), betreff: msg.getSubject(), dateien }),
         muteHttpExceptions: true,
       });
@@ -89,10 +89,11 @@ function einstellungen_() {
   const p = PropertiesService.getScriptProperties();
   const url = p.getProperty('FUNKTION_URL');
   const token = p.getProperty('EINGANG_TOKEN');
+  const apikey = p.getProperty('SUPABASE_KEY');
   if (!url || !token) {
     throw new Error('Bitte zuerst FUNKTION_URL und EINGANG_TOKEN unter Projekteinstellungen → Skripteigenschaften eintragen.');
   }
-  return { url, token };
+  return { url, token, apikey };
 }
 
 function label_(name) {

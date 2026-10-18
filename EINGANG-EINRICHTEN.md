@@ -48,6 +48,8 @@ Mit dem Gmail-Konto angemeldet, in dem die Rechnungen ankommen:
 3. Links **⚙️ Projekteinstellungen** → ganz unten **Skripteigenschaften** → zwei Einträge:
    - `FUNKTION_URL` = die Adresse aus Schritt 3.5
    - `EINGANG_TOKEN` = dasselbe Token wie in Schritt 2
+   - `SUPABASE_KEY` = der **Publishable key** (`sb_publishable_…`) aus Supabase →
+     Project Settings → API Keys (nicht der Secret key!)
 4. Zurück zum Editor → oben die Funktion **`einrichten`** auswählen → **Ausführen**.
 5. Google fragt nach Berechtigungen (Gmail lesen/Labels ändern, externe Anfragen).
    Weil das Skript von dir selbst ist, warnt Google „App nicht überprüft“ →
