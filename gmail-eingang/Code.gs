@@ -16,6 +16,10 @@ const SUCHWOERTER = ['Rechnung', 'Invoice', 'Faktura', 'Gutschrift', 'Beleg'];
 const ERLAUBT = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'image/heic'];
 const MIN_BILD_BYTES = 30 * 1024; // kleinere Bilder sind fast immer Logos oder Signaturen
 const MAX_BYTES = 10 * 1024 * 1024;
+// Öffentlicher anon-Key des Supabase-Projekts (steht ohnehin in belege.html, kein Geheimnis).
+// Das Supabase-Gateway verlangt ihn auch bei Funktionen ohne JWT-Prüfung; den eigentlichen
+// Schutz macht das geheime EINGANG_TOKEN.
+const ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxwdXh2dmZycmNuYnV6YWZzY3lrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ2ODIxNDcsImV4cCI6MjEwMDI1ODE0N30.6VZUmmXj_x3Q8J55s_tbOHcW5-U5OXllGoEBhypaVfI';
 
 // Einmal von Hand ausführen: legt die Labels an, merkt sich das Startdatum (ältere Mails
 // werden nicht automatisch geholt) und startet den 15-Minuten-Zeitplan.
@@ -63,7 +67,7 @@ function belegeAbholen() {
       const antwort = UrlFetchApp.fetch(url, {
         method: 'post',
         contentType: 'application/json',
-        headers: { 'x-eingang-token': token },
+        headers: { 'x-eingang-token': token, 'apikey': ANON_KEY, 'Authorization': 'Bearer ' + ANON_KEY },
         payload: JSON.stringify({ message_id: msg.getId(), absender: msg.getFrom(), betreff: msg.getSubject(), dateien }),
         muteHttpExceptions: true,
       });
