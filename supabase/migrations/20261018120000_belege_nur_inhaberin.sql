@@ -18,17 +18,18 @@ create table if not exists public.app_inhaberin (
 -- RLS ohne Policy: über den API-Key weder lesbar noch schreibbar.
 alter table public.app_inhaberin enable row level security;
 
+-- Bewusst für alle Rollen ausführbar (kein revoke): die RESTRICTIVE-Policies gelten auch
+-- für anon, und z. B. in der Storage-Policy würde ein fehlendes EXECUTE-Recht sonst Anfragen
+-- auf ANDERE Buckets mit "permission denied" abbrechen statt sie durchzulassen. Ohne Login
+-- liefert die Funktion ohnehin false. Einfache Anführungszeichen statt $$, weil der
+-- Supabase-SQL-Editor beim Einfügen mit $$-Blöcken stolpern kann.
 create or replace function public.ist_inhaberin()
 returns boolean
 language sql
 stable
 security definer
 set search_path = public
-as $$
-  select exists (select 1 from public.app_inhaberin where user_id = auth.uid());
-$$;
-revoke all on function public.ist_inhaberin() from public;
-grant execute on function public.ist_inhaberin() to authenticated;
+as 'select exists (select 1 from public.app_inhaberin where user_id = auth.uid())';
 
 -- Belege-Tabelle
 alter table public.belege_neu enable row level security;
