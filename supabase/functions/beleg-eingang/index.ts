@@ -24,6 +24,10 @@ function gleich(a: string, b: string) {
   return diff === 0;
 }
 
+function ohneLeerzeichen(s: string) {
+  return s.replace(/[\s\u00a0\u200b\u200c\u200d\ufeff]+/g, '');
+}
+
 async function fingerabdruck(s: string) {
   if (!s) return 'leer';
   const h = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s)));
@@ -48,10 +52,11 @@ function signaturPasst(mime: string, b: Uint8Array) {
 Deno.serve(async (req) => {
   if (req.method !== 'POST') return json({ error: 'Nur POST' }, 405);
 
-  // trim(): beim Kopieren mitgerutschte Leerzeichen/Zeilenumbrüche sollen nicht zum 401 führen
-  const token = (Deno.env.get('EINGANG_TOKEN') ?? '').trim();
+  // Alle Leer-/Steuerzeichen entfernen: Supabase-Secrets und Apps-Script-Eigenschaften speichern
+  // mitkopierte Zeilenumbrüche/Tabs unterschiedlich (gleiche Länge, anderer Inhalt → 401)
+  const token = ohneLeerzeichen(Deno.env.get('EINGANG_TOKEN') ?? '');
   if (token.length < 32) return json({ error: 'Funktion nicht eingerichtet (EINGANG_TOKEN fehlt oder zu kurz)' }, 500);
-  const erhalten = (req.headers.get('x-eingang-token') ?? '').trim();
+  const erhalten = ohneLeerzeichen(req.headers.get('x-eingang-token') ?? '');
   if (!gleich(erhalten, token)) {
     // Nur Länge + 4 Zeichen eines SHA-256-Fingerabdrucks — genug, um beim Einrichten zu sehen,
     // welche Seite abweicht, ohne etwas über das Token selbst preiszugeben
