@@ -103,8 +103,12 @@ function standardEinstellungen(){
       {id:'p3',name:'Mitarbeiterin 3',rolle:'mitarbeiterin',lohn:'',wochenstunden:'40'},
     ],
     lnk:'30',gewinn:'10',ust:'20',produktiv:'80',materialQuote:'',
-    stufen:[{ab:'0',proz:'10'},{ab:'1000',proz:'15'},{ab:'2000',proz:'20'}],
-    produktProv:'5',
+    // Prämienmodell des Salons: Schwelle = Bruttolohn × Faktor ÷ 14 × 12; wer sie erreicht,
+    // bekommt die Grundprämie, für jeden weiteren vollen Schritt Umsatz noch einmal die
+    // Schrittprämie. Erreichen die Mitarbeiterinnen zusammen das Teamziel, bekommt jede zusätzlich
+    // die Teamprämie.
+    praemie:{faktor:'4,2',basis:'brutto',grund:'100',schritt:'1000',schrittPraemie:'100',teamZiel:'25500',teamPraemie:'100'},
+    produktProv:'0',
     katRollen:{},
   };
 }
@@ -173,7 +177,12 @@ async function laden(){
     sb('/rest/v1/belege_neu?user_id=eq.'+S.userId+'&art=eq.ausgabe&select=monat,datum,kategorie,betrag,netto,ust_betrag,ust_satz,vorsteuer_moeglich,betrieblich,betrieblicher_anteil,ist_anlage'),
     sb('/rest/v1/profiles?id=eq.'+S.userId+'&select=kategorien').catch(()=>[]),
   ]);
-  S.einst={...standardEinstellungen(),...(einst?.[0]?.daten||{})};
+  const gespeichert=einst?.[0]?.daten||{};
+  S.einst={...standardEinstellungen(),...gespeichert};
+  S.einst.praemie={...standardEinstellungen().praemie,...(gespeichert.praemie||{})};
+  // Einstellungen aus dem früheren Prozent-Stufen-Modell: dessen Produktprovision nicht übernehmen
+  if(!gespeichert.praemie)S.einst.produktProv='0';
+  delete S.einst.stufen;
   S.md={};(monate||[]).forEach(m=>{S.md[m.monat]=m.daten||{};});
   S.belege=belege||[];
   if(prof?.[0]?.kategorien?.length)S.kats=prof[0].kategorien;
@@ -265,17 +274,18 @@ function produktiveStunden(p,abwTage){
   const weg=zahl(abwTage)*wh/5;
   return Math.max(0,soll-weg)*zahl(S.einst.produktiv)/100;
 }
-// Prämie auf den Umsatz über der Schwelle, gestaffelt wie Steuerstufen: jede Stufe gilt nur
-// für den Teil, der in ihren Bereich fällt. `faktor` skaliert die Stufengrenzen (Quartal = 3).
-function stufenPraemie(ueber,faktor=1){
-  if(ueber<=0)return 0;
-  const st=S.einst.stufen.map(s=>({ab:zahl(s.ab)*faktor,p:zahl(s.proz)/100})).sort((a,b)=>a.ab-b.ab);
-  let summe=0;
-  st.forEach((s,i)=>{
-    const bis=i+1<st.length?st[i+1].ab:Infinity;
-    if(ueber>s.ab)summe+=(Math.min(ueber,bis)-s.ab)*s.p;
-  });
-  return summe;
+// Umsatz, an dem die Prämie gemessen wird: brutto (wie in meinKassa) oder netto
+function praemienUmsatz(x){
+  return S.einst.praemie.basis==='netto'?x.ist:x.ist*(1+zahl(S.einst.ust)/100);
+}
+function praemienSchwelle(p){
+  return zahl(p.lohn)*zahl(S.einst.praemie.faktor)/14*12;
+}
+function einzelPraemie(umsatz,schwelle){
+  const pm=S.einst.praemie;
+  if(schwelle<=0||umsatz<schwelle)return 0;
+  const schritt=zahl(pm.schritt);
+  return zahl(pm.grund)+(schritt>0?Math.floor((umsatz-schwelle)/schritt)*zahl(pm.schrittPraemie):0);
 }
 function berechne(monat,opt={}){
   const e=S.einst,md=S.md[monat]||{},kb=kostenBasis(monat);
@@ -295,7 +305,17 @@ function berechne(monat,opt={}){
     x.ueber=x.ist-x.schwelle;
     x.eurH=x.h>0?x.ist/x.h:0;
     x.noetigH=x.h>0?x.schwelle/x.h:0;
-    x.praemie=x.p.rolle==='mitarbeiterin'?stufenPraemie(x.ueber)+x.prod*zahl(e.produktProv)/100:0;
+  });
+  const team=personen.filter(x=>x.p.rolle==='mitarbeiterin');
+  const teamUmsatz=team.reduce((a,x)=>a+praemienUmsatz(x),0);
+  const teamZiel=zahl(e.praemie.teamZiel);
+  const teamErreicht=teamZiel>0&&teamUmsatz>=teamZiel;
+  personen.forEach(x=>{
+    x.pUmsatz=praemienUmsatz(x);
+    x.pSchwelle=praemienSchwelle(x.p);
+    x.pEinzel=x.p.rolle==='mitarbeiterin'?einzelPraemie(x.pUmsatz,x.pSchwelle):0;
+    x.pTeam=x.p.rolle==='mitarbeiterin'&&teamErreicht?zahl(e.praemie.teamPraemie):0;
+    x.praemie=x.p.rolle==='mitarbeiterin'?x.pEinzel+x.pTeam+x.prod*zahl(e.produktProv)/100:0;
     x.praemieKosten=x.praemie*(1+lnk);
   });
   const ist=personen.reduce((a,x)=>a+x.ist,0);
@@ -303,7 +323,7 @@ function berechne(monat,opt={}){
   const praemien=personen.reduce((a,x)=>a+x.praemieKosten,0);
   const db=ist*(1-mq);
   return{
-    monat,kb,personen,sumH,ist,db,lohn,praemien,
+    monat,kb,personen,sumH,ist,db,lohn,praemien,teamUmsatz,teamZiel,teamErreicht,
     material:ist*mq,
     ergebnis:db-lohn-kb.fix-praemien,
     hatUmsatz:ist>0,
@@ -400,6 +420,20 @@ function setzeMonat(pid,key,val){
   speichereMonatSpaeter(S.monat);
   aktualisiereMonat();
 }
+function praemienZeilen(x,r){
+  const pm=S.einst.praemie,art=pm.basis==='netto'?'netto':'brutto';
+  if(x.pSchwelle<=0)return'<div class="row"><span>Prämie</span><b>Bruttolohn fehlt</b></div>';
+  let naechste='';
+  if(x.pUmsatz<x.pSchwelle)naechste='noch '+eur(x.pSchwelle-x.pUmsatz)+' bis '+eur(zahl(pm.grund));
+  else if(zahl(pm.schritt)>0){
+    const rest=zahl(pm.schritt)-((x.pUmsatz-x.pSchwelle)%zahl(pm.schritt));
+    naechste='noch '+eur(rest)+' bis weitere '+eur(zahl(pm.schrittPraemie));
+  }
+  return'<div class="row"><span>Prämien-Schwelle ('+art+')</span><b>'+eur(x.pSchwelle)+'</b></div>'
+    +'<div class="row"><span>Umsatz ('+art+')</span><b>'+eur(x.pUmsatz)+'</b></div>'
+    +'<div class="row"><span>Prämie Einzel'+(x.pTeam?' + Team':'')+'</span><b class="'+(x.praemie>0?'pos':'')+'">'+eur(x.praemie)+'</b></div>'
+    +(naechste?'<div class="hint" style="margin-top:2px">'+naechste+'</div>':'');
+}
 function aktualisiereMonat(){
   const r=berechne(S.monat);
   r.personen.forEach(x=>{
@@ -411,7 +445,7 @@ function aktualisiereMonat(){
       +'<div class="row"><span>Kosten des Arbeitsplatzes</span><b>'+eur(x.kosten+x.fixAnteil)+'</b></div>'
       +'<div class="row"><span>Pro produktive Stunde (ist / nötig)</span><b>'+eur2(x.eurH)+' / '+eur2(x.noetigH)+'</b></div>'
       +'<div class="row"><span>'+(x.ueber>=0?'Über':'Unter')+' der Schwelle</span><b class="'+(x.ueber>=0?'pos':'neg')+'">'+(x.ueber>=0?'+':'')+eur(x.ueber)+'</b></div>'
-      +(x.p.rolle==='mitarbeiterin'?'<div class="row"><span>Prämie (wenn monatlich abgerechnet)</span><b>'+eur2(x.praemie)+'</b></div>':'')
+      +(x.p.rolle==='mitarbeiterin'?praemienZeilen(x,r):'')
       +'<div class="row"><span>Produktive Stunden</span><b>'+x.h.toLocaleString('de-AT',{maximumFractionDigits:0})+' h</b></div>';
   });
   const s=document.getElementById('erg-salon');
@@ -419,6 +453,8 @@ function aktualisiereMonat(){
     s.innerHTML='<h2>Salon gesamt <small>'+mL(S.monat)+'</small></h2>'
       +'<div class="grid2"><div><div class="stat-label">Umsatz netto</div><div class="stat-value">'+eur(r.ist)+'</div><div class="stat-sub">'+eur(r.ist*(1+zahl(S.einst.ust)/100))+' brutto</div></div>'
       +'<div><div class="stat-label">Ergebnis</div><div class="stat-value '+(r.ergebnis>=0?'pos':'neg')+'">'+eur(r.ergebnis)+'</div><div class="stat-sub">nach Löhnen, Fixkosten, Material'+(r.praemien?', Prämien':'')+' und deinem Unternehmerlohn</div></div></div>'
+      +(r.teamZiel>0?'<div class="row" style="margin-top:8px"><span>Teamziel Mitarbeiterinnen ('+(S.einst.praemie.basis==='netto'?'netto':'brutto')+')</span><b class="'+(r.teamErreicht?'pos':'')+'">'+eur(r.teamUmsatz)+' / '+eur(r.teamZiel)+(r.teamErreicht?' ✓':'')+'</b></div>'
+        +(r.teamErreicht?'':'<div class="hint" style="margin-top:2px">noch '+eur(r.teamZiel-r.teamUmsatz)+' bis je '+eur(zahl(S.einst.praemie.teamPraemie))+' Teamprämie</div>'):'')
       +(r.ist>0?'<div class="hint">Personalkostenquote Team (ohne dich): <b>'+proz(r.personen.filter(x=>x.p.rolle!=='chefin').reduce((a,x)=>a+x.kosten,0)/r.ist*100)+'</b> · Pro Mitarbeiterin: +100 € brutto Gehalt brauchen ≈ <b>'+eur(r.plus100)+'</b> mehr Nettoumsatz im Monat.</div>':'<div class="hint">Noch kein Umsatz für diesen Monat eingetragen.</div>');
   }
   const k=document.getElementById('erg-kosten');
@@ -443,28 +479,29 @@ function htmlQuartal(){
   if(!monate.length)return'<div class="card"><h2>'+titel+'</h2><div class="hint">Für dieses Quartal ist noch kein Umsatz eingetragen.</div></div>';
   const summe={};
   monate.forEach(mm=>berechne(mm).personen.forEach(x=>{
-    const s=summe[x.p.id]=summe[x.p.id]||{p:x.p,ist:0,schwelle:0,prod:0,monatsPraemien:0};
-    s.ist+=x.ist;s.schwelle+=x.schwelle;s.prod+=x.prod;s.monatsPraemien+=x.praemie;
+    const s=summe[x.p.id]=summe[x.p.id]||{p:x.p,ist:0,schwelle:0,praemie:0};
+    s.ist+=x.ist;s.schwelle+=x.schwelle;s.praemie+=x.praemie;
   }));
   const lnk=zahl(S.einst.lnk)/100;
   let gesamtKosten=0;
   const zeilen=Object.values(summe).map(s=>{
     const ueber=s.ist-s.schwelle;
-    const pr=s.p.rolle==='mitarbeiterin'?stufenPraemie(ueber,monate.length)+s.prod*zahl(S.einst.produktProv)/100:0;
-    gesamtKosten+=pr*(1+lnk);
-    return'<tr><td>'+esc(s.p.name)+'</td><td>'+eur(s.ist)+'</td><td>'+eur(s.schwelle)+'</td><td class="'+(ueber>=0?'pos':'neg')+'">'+(ueber>=0?'+':'')+eur(ueber)+'</td><td><b>'+(s.p.rolle==='mitarbeiterin'?eur2(pr):'–')+'</b></td><td style="color:var(--ink3)">'+(s.p.rolle==='mitarbeiterin'?eur2(s.monatsPraemien):'–')+'</td></tr>';
+    gesamtKosten+=s.praemie*(1+lnk);
+    return'<tr><td>'+esc(s.p.name)+'</td><td>'+eur(s.ist)+'</td><td>'+eur(s.schwelle)+'</td><td class="'+(ueber>=0?'pos':'neg')+'">'+(ueber>=0?'+':'')+eur(ueber)+'</td><td><b>'+(s.p.rolle==='mitarbeiterin'?eur(s.praemie):'–')+'</b></td></tr>';
   }).join('');
   return'<div class="card"><h2>'+titel+' <small>'+monate.map(mL).join(', ')+'</small></h2>'
-    +'<div class="tbl-wrap"><table><tr><th>Person</th><th>Ist netto</th><th>Schwelle</th><th>Differenz</th><th>Prämie Quartal</th><th>zum Vergleich: monatlich</th></tr>'+zeilen+'</table></div>'
-    +'<div class="hint">Prämie brutto. Kostet dich mit Lohnnebenkosten insgesamt ≈ <b>'+eur(gesamtKosten)+'</b>. Pro Quartal abgerechnet gleicht ein schwacher Monat einen starken aus — das ist fairer als monatlich.</div></div>'
+    +'<div class="tbl-wrap"><table><tr><th>Person</th><th>Ist netto</th><th>Schwelle</th><th>Differenz</th><th>Prämien</th></tr>'+zeilen+'</table></div>'
+    +'<div class="hint">„Schwelle“ = was der Arbeitsplatz einbringen muss, damit er sich rechnet (netto). Prämien = Summe der Monatsprämien, brutto; kosten dich mit Lohnnebenkosten insgesamt ≈ <b>'+eur(gesamtKosten)+'</b>.</div></div>'
     +htmlStufenErklaerung();
 }
 function htmlStufenErklaerung(){
-  const st=S.einst.stufen.map(s=>({ab:zahl(s.ab),p:zahl(s.proz)})).sort((a,b)=>a.ab-b.ab);
+  const pm=S.einst.praemie,art=pm.basis==='netto'?'Netto':'Brutto';
   return'<div class="card"><h2>So funktioniert die Prämie</h2><div style="font-size:13px;line-height:1.6;color:var(--ink2)">'
-    +'Die <b>Schwelle</b> ist das, was ein Arbeitsplatz einbringen muss: Lohn mit Nebenkosten, Anteil an Miete und Fixkosten, Material und ein Gewinnanteil für den Salon von '+esc(S.einst.gewinn)+' %. Darunter gibt es keine Prämie, aber auch keinen Nachteil.<br>'
-    +'Vom Nettoumsatz <b>über</b> der Schwelle: '+st.map((s,i)=>s.p+' % '+(i+1<st.length?'von '+eur(s.ab)+' bis '+eur(st[i+1].ab):'ab '+eur(s.ab))).join(', ')+' (Grenzen pro Monat; im Quartal mal Anzahl der Monate mit Umsatz).<br>'
-    +'Dazu '+esc(S.einst.produktProv)+' % auf den Netto-Produktverkauf. Urlaub, Krankenstand und Feiertage senken die Schwelle anteilig.</div></div>';
+    +'<b>Prämien-Schwelle</b> = Bruttolohn × '+esc(pm.faktor)+' ÷ 14 × 12 ('+art+'umsatz pro Monat, Dienstleistung + Produkte).<br>'
+    +'Wer die Schwelle erreicht, bekommt <b>'+eur(zahl(pm.grund))+'</b>, für jede weiteren vollen '+eur(zahl(pm.schritt))+' Umsatz noch einmal <b>'+eur(zahl(pm.schrittPraemie))+'</b>.<br>'
+    +'Machen die Mitarbeiterinnen zusammen mindestens <b>'+eur(zahl(pm.teamZiel))+'</b>, bekommt jede zusätzlich <b>'+eur(zahl(pm.teamPraemie))+'</b>.'
+    +(zahl(S.einst.produktProv)>0?'<br>Dazu '+esc(S.einst.produktProv)+' % auf den Netto-Produktverkauf.':'')
+    +'</div></div>';
 }
 
 function htmlChefin(){
@@ -542,13 +579,20 @@ function htmlEinstellungen(){
     +'<div><label class="lbl">Material/Ware % vom Umsatz</label>'+inp('materialQuote',e.materialQuote,'leer = aus Belegen')+'</div>'
     +'</div><div class="hint">Lohnnebenkosten: Dienstgeberanteil SV, DB/DZ, Kommunalsteuer, MVK — den genauen Wert kennt deine Lohnverrechnung. 14 Gehälter werden automatisch auf 12 Monate verteilt.</div></div>';
 
-  h+='<div class="card"><h2>Prämienstufen <small>pro Monat, auf Nettoumsatz über der Schwelle</small></h2>';
-  e.stufen.forEach((s,i)=>{
-    h+='<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;font-size:13px">ab +'+inp('stufen.'+i+'.ab',s.ab,'0','90px')+' €  →  '+inp('stufen.'+i+'.proz',s.proz,'10','70px')+' %'
-      +(e.stufen.length>1?'<button class="btn-del" onclick="S.einst.stufen.splice('+i+',1);render()">✕</button>':'')+'</div>';
-  });
-  h+='<button class="btn-light" onclick="S.einst.stufen.push({ab:\'\',proz:\'\'});render()">+ Stufe</button>'
-    +'<div style="margin-top:12px"><label class="lbl">Provision auf Produktverkauf % (netto)</label>'+inp('produktProv',e.produktProv,'5','90px')+'</div></div>';
+  const pm=e.praemie;
+  const beispiel=e.personen.find(p=>p.rolle==='mitarbeiterin'&&zahl(p.lohn)>0);
+  h+='<div class="card"><h2>Prämie <small>pro Monat</small></h2><div class="grid2">'
+    +'<div><label class="lbl">Faktor (Bruttolohn × Faktor ÷ 14 × 12)</label>'+inp('praemie.faktor',pm.faktor,'4,2')+'</div>'
+    +'<div><label class="lbl">Umsatz zählt</label><select class="inp" onchange="S.einst.praemie.basis=this.value"><option value="brutto"'+(pm.basis!=='netto'?' selected':'')+'>brutto (wie meinKassa)</option><option value="netto"'+(pm.basis==='netto'?' selected':'')+'>netto</option></select></div>'
+    +'<div><label class="lbl">Prämie bei Erreichen €</label>'+inp('praemie.grund',pm.grund,'100')+'</div>'
+    +'<div><label class="lbl">je weitere … € Umsatz</label>'+inp('praemie.schritt',pm.schritt,'1000')+'</div>'
+    +'<div><label class="lbl">… gibt es nochmal €</label>'+inp('praemie.schrittPraemie',pm.schrittPraemie,'100')+'</div>'
+    +'<div><label class="lbl">Provision Produkte % (netto, optional)</label>'+inp('produktProv',e.produktProv,'0')+'</div>'
+    +'<div><label class="lbl">Teamziel Mitarbeiterinnen gesamt €</label>'+inp('praemie.teamZiel',pm.teamZiel,'25500')+'</div>'
+    +'<div><label class="lbl">Teamprämie je Mitarbeiterin €</label>'+inp('praemie.teamPraemie',pm.teamPraemie,'100')+'</div>'
+    +'</div>'
+    +(beispiel?'<div class="hint">Beispiel '+esc(beispiel.name)+': '+eur(zahl(beispiel.lohn))+' × '+esc(pm.faktor)+' ÷ 14 × 12 = <b>'+eur(praemienSchwelle(beispiel))+'</b> Prämien-Schwelle.</div>':'')
+    +'</div>';
 
   h+='<div class="card"><h2>Beleg-Kategorien</h2>';
   S.kats.forEach(k=>{
