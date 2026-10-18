@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <link rel="manifest" href="https://mirjamwalenta-a11y.github.io/belege.greathairday/manifest.json">
+  <link rel="apple-touch-icon" href="https://mirjamwalenta-a11y.github.io/abwesenheiten-ghd/icon-512.png">
+  <meta name="theme-color" content="#1c1917">
+  <meta charset="UTF-8"/>
+  <script src="https://mirjamwalenta-a11y.github.io/abwesenheiten-ghd/ghd-sitzung.js" data-schluessel="sb_token,sb_uid,sb_refresh"></script>  <!-- automatisch abmelden nach 15 min ohne Bedienung -->
+<script src="https://mirjamwalenta-a11y.github.io/abwesenheiten-ghd/ghd-offline.js" data-schluessel="sb_token,sb_uid,sb_refresh"></script>  <!-- offline nutzbar: Service Worker, gemerkte Daten, Nachsync -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <title>Salon-Cockpit</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --ink:#1A1414;--ink2:#5C5055;--ink3:#9C8E92;
+      --canvas:#F7F4F2;--surface:#FFF;
+      --accent:#2C2438;--accent2:#3D2F4E;--accentlight:#C8B8D8;
+      --red:#B85C4A;--green:#4A8A6C;--amber:#B7862C;
+      --border:#E4DCE8;--radius:14px;--shadow:0 1px 6px rgba(44,36,56,0.09);
+    }
+    html,body{min-height:100%;background:var(--canvas);font-family:'Inter',sans-serif;color:var(--ink);-webkit-font-smoothing:antialiased}
+    .header{background:var(--accent);padding:12px 18px;display:flex;align-items:center;justify-content:space-between;gap:10px;position:sticky;top:0;z-index:100;box-shadow:0 2px 12px rgba(44,36,56,0.25)}
+    .header-title{color:#fff;font-size:16px;font-weight:700}
+    .header-sub{color:var(--accentlight);font-size:10px;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:1px}
+    .header a{color:var(--accentlight);font-size:12px;text-decoration:none}
+    .month-select{background:var(--accent2);color:#fff;border:none;border-radius:8px;padding:6px 8px;font-size:12px;font-family:inherit;cursor:pointer;outline:none}
+    .nav{background:var(--surface);border-bottom:1px solid var(--border);display:flex;position:sticky;top:58px;z-index:99}
+    .nav-btn{flex:1;padding:12px 4px;border:none;background:none;cursor:pointer;font-size:12px;font-weight:500;color:var(--ink3);font-family:inherit;border-bottom:2px solid transparent}
+    .nav-btn.active{color:var(--accent);font-weight:700;border-bottom-color:var(--accent)}
+    .main{padding:18px 16px 80px;max-width:760px;margin:0 auto}
+    .card{background:var(--surface);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow);margin-bottom:12px}
+    .card h2{font-size:15px;font-weight:700;color:var(--accent);margin-bottom:10px;display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+    .card h2 small{font-size:11px;font-weight:500;color:var(--ink3)}
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+    .stat-label{font-size:10px;color:var(--ink3);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px}
+    .stat-value{font-size:19px;font-weight:700;letter-spacing:-0.5px}
+    .stat-sub{font-size:11px;color:var(--ink3);margin-top:2px}
+    .bar-track{background:#F0EAF4;border-radius:4px;height:8px;margin:10px 0 4px;position:relative;overflow:hidden}
+    .bar-fill{border-radius:4px;height:8px;transition:width 0.3s}
+    .lbl{font-size:11px;font-weight:600;color:var(--ink2);margin-bottom:3px;display:block}
+    .inp{width:100%;padding:10px 11px;border:1.5px solid var(--border);border-radius:9px;font-size:14px;font-family:inherit;background:#FAFAF8;color:var(--ink);outline:none}
+    .inp:focus{border-color:var(--accent)}
+    .hint{font-size:11px;color:var(--ink3);line-height:1.5;margin-top:6px}
+    .row{display:flex;justify-content:space-between;gap:10px;font-size:13px;padding:5px 0;border-bottom:1px solid #F3EEF5}
+    .row:last-child{border-bottom:none}
+    .row b{white-space:nowrap}
+    .pos{color:var(--green)}.neg{color:var(--red)}
+    .pill{display:inline-block;font-size:11px;font-weight:600;border-radius:6px;padding:2px 8px}
+    .pill.ok{background:#E6F2EC;color:var(--green)}.pill.knapp{background:#FBF1DE;color:var(--amber)}.pill.unter{background:#FEF0EE;color:var(--red)}
+    .btn{background:var(--accent);color:#fff;border:none;border-radius:10px;padding:12px 16px;font-size:14px;font-weight:600;font-family:inherit;cursor:pointer}
+    .btn-light{background:#F0EAF4;color:var(--ink2);border:none;border-radius:8px;padding:8px 12px;font-size:12px;font-family:inherit;cursor:pointer}
+    .btn-del{background:#FEF0EE;color:var(--red);border:none;border-radius:8px;padding:8px 10px;font-size:12px;font-family:inherit;cursor:pointer}
+    table{width:100%;border-collapse:collapse;font-size:12px}
+    th,td{padding:7px 4px;text-align:right;border-bottom:1px solid #F3EEF5;white-space:nowrap}
+    th:first-child,td:first-child{text-align:left;white-space:normal}
+    th{font-size:10px;color:var(--ink3);text-transform:uppercase;letter-spacing:.5px;font-weight:600}
+    .tbl-wrap{overflow-x:auto}
+    input[type=range]{width:100%;accent-color:var(--accent)}
+    .center{min-height:80vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px;gap:14px;color:var(--ink2)}
+    .spinner{width:36px;height:36px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.7s linear infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--accent);color:#fff;border-radius:10px;padding:10px 20px;font-size:13px;font-weight:600;z-index:999}
+    .toast.err{background:var(--red)}
+    @media (max-width:520px){.grid3{grid-template-columns:1fr 1fr}.stat-value{font-size:17px}}
+  </style>
+</head>
+<body>
+<div id="app"><div class="center"><div class="spinner"></div></div></div>
+<script>
+const SB_URL = 'https://lpuxvvfrrcnbuzafscyk.supabase.co';
+const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxwdXh2dmZycmNuYnV6YWZzY3lrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ2ODIxNDcsImV4cCI6MjEwMDI1ODE0N30.6VZUmmXj_x3Q8J55s_tbOHcW5-U5OXllGoEBhypaVfI';
+const MONATE=['Jänner','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
+// Fallbacks, wenn die Belege-App noch keine eigenen Kategorien hat (identisch zu belege.html)
+const DEFAULT_KATS=[
+  {id:'k1',icon:'🛒',label:'Einkauf & Material'},
+  {id:'k2',icon:'🏠',label:'Miete & Betriebskosten'},
+  {id:'k3',icon:'👥',label:'Personal & Lohn'},
+  {id:'k4',icon:'🔧',label:'Geräte & Werkzeug'},
+  {id:'k5',icon:'📱',label:'Marketing & Website'},
+  {id:'k6',icon:'📋',label:'Versicherung & Steuer'},
+  {id:'k7',icon:'📦',label:'Sonstiges'},
+];
+// Wie eine Beleg-Kategorie in die Rechnung eingeht. "personal" wird ignoriert, weil die Löhne
+// direkt pro Person in den Einstellungen stehen — sonst würden sie doppelt gezählt.
+const KAT_ROLLEN=[
+  {id:'fix',label:'Fixkosten'},
+  {id:'material',label:'Material/Ware (steigt mit Umsatz)'},
+  {id:'personal',label:'Personal (nicht zählen)'},
+  {id:'ignorieren',label:'Nicht zählen'},
+];
+const MATERIAL_ANNAHME=10; // %, solange zu wenige Monate mit Umsatz erfasst sind
+
+function standardEinstellungen(){
+  return{
+    personen:[
+      {id:'chefin',name:'Ich',rolle:'chefin',lohn:'',wochenstunden:'40'},
+      {id:'p1',name:'Mitarbeiterin 1',rolle:'mitarbeiterin',lohn:'',wochenstunden:'40'},
+      {id:'p2',name:'Mitarbeiterin 2',rolle:'mitarbeiterin',lohn:'',wochenstunden:'40'},
+      {id:'p3',name:'Mitarbeiterin 3',rolle:'mitarbeiterin',lohn:'',wochenstunden:'40'},
+    ],
+    lnk:'30',gewinn:'10',ust:'20',produktiv:'80',materialQuote:'',
+    stufen:[{ab:'0',proz:'10'},{ab:'1000',proz:'15'},{ab:'2000',proz:'20'}],
+    produktProv:'5',
+    katRollen:{},
+  };
+}
+
+let S={
+  screen:'loading',fehler:'',
+  token:null,userId:null,
+  einst:null,md:{},belege:[],kats:DEFAULT_KATS,
+  ansicht:'monat',monat:aktMonat(),
+  chefinAnteil:100,
+};
+
+// ── Hilfen ───────────────────────────────────────────────────────────────────
+function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function aktMonat(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');}
+function mL(k){const[y,m]=k.split('-');return MONATE[parseInt(m)-1]+' '+y;}
+function monatPlus(k,n){const[y,m]=k.split('-').map(Number);const d=new Date(y,m-1+n,1);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');}
+function eur(n){return(n||0).toLocaleString('de-AT',{style:'currency',currency:'EUR',maximumFractionDigits:0});}
+function eur2(n){return(n||0).toLocaleString('de-AT',{style:'currency',currency:'EUR'});}
+function proz(n){return(n||0).toLocaleString('de-AT',{maximumFractionDigits:1})+' %';}
+// Akzeptiert "1.370,50", "1370,5" und "1370.5"
+function zahl(s){
+  if(s==null||s==='')return 0;
+  const t=String(s).replace(/[\s€]/g,'').replace(/\.(?=\d{3}(\D|$))/g,'').replace(',','.');
+  const n=parseFloat(t);return isFinite(n)?n:0;
+}
+function toast(msg,typ){
+  const t=document.createElement('div');t.className='toast'+(typ==='err'?' err':'');t.textContent=msg;
+  document.body.appendChild(t);setTimeout(()=>t.remove(),2600);
+}
+function katRolle(id){
+  const r=S.einst?.katRollen?.[id];if(r)return r;
+  if(id==='k1')return'material';if(id==='k3')return'personal';return'fix';
+}
+
+// ── Supabase ─────────────────────────────────────────────────────────────────
+async function refreshToken(){
+  const rt=localStorage.getItem('sb_refresh');if(!rt)throw new Error('Kein Refresh-Token');
+  const r=await fetch(SB_URL+'/auth/v1/token?grant_type=refresh_token',{method:'POST',headers:{'Content-Type':'application/json','apikey':SB_KEY},body:JSON.stringify({refresh_token:rt})});
+  const d=await r.json();
+  if(!r.ok||!d.access_token)throw new Error('Sitzung abgelaufen');
+  S.token=d.access_token;
+  try{
+    localStorage.setItem('sb_token',S.token);sessionStorage.setItem('sb_token',S.token);
+    if(d.refresh_token)localStorage.setItem('sb_refresh',d.refresh_token);
+  }catch(e){}
+}
+async function sb(path,opt={}){
+  const mk=()=>fetch(SB_URL+path,{...opt,headers:{'Content-Type':'application/json','apikey':SB_KEY,'Authorization':'Bearer '+S.token,...(opt.headers||{})}});
+  let r=await mk();
+  if(r.status===401){await refreshToken();r=await mk();}
+  const txt=await r.text();
+  const d=txt?JSON.parse(txt):null;
+  if(!r.ok){
+    const e=new Error((d&&(d.message||d.error))||('Fehler '+r.status));
+    e.code=d&&d.code;throw e;
+  }
+  return d;
+}
+function tabelleFehlt(e){return e&&(e.code==='PGRST205'||e.code==='42P01'||/does not exist|schema cache/i.test(e.message));}
+
+async function laden(){
+  const[einst,monate,belege,prof]=await Promise.all([
+    sb('/rest/v1/cockpit_einstellungen?select=daten'),
+    sb('/rest/v1/cockpit_monat?select=monat,daten'),
+    sb('/rest/v1/belege_neu?user_id=eq.'+S.userId+'&art=eq.ausgabe&select=monat,datum,kategorie,betrag,netto,ust_betrag,ust_satz,vorsteuer_moeglich,betrieblich,betrieblicher_anteil,ist_anlage'),
+    sb('/rest/v1/profiles?id=eq.'+S.userId+'&select=kategorien').catch(()=>[]),
+  ]);
+  S.einst={...standardEinstellungen(),...(einst?.[0]?.daten||{})};
+  S.md={};(monate||[]).forEach(m=>{S.md[m.monat]=m.daten||{};});
+  S.belege=belege||[];
+  if(prof?.[0]?.kategorien?.length)S.kats=prof[0].kategorien;
+}
+async function speichereEinstellungen(){
+  await sb('/rest/v1/cockpit_einstellungen?on_conflict=user_id',{method:'POST',headers:{'Prefer':'resolution=merge-duplicates'},body:JSON.stringify({user_id:S.userId,daten:S.einst,aktualisiert:new Date().toISOString()})});
+}
+let _speicherTimer=null;
+function speichereMonatSpaeter(monat){
+  clearTimeout(_speicherTimer);
+  _speicherTimer=setTimeout(async()=>{
+    try{
+      await sb('/rest/v1/cockpit_monat?on_conflict=user_id,monat',{method:'POST',headers:{'Prefer':'resolution=merge-duplicates'},body:JSON.stringify({user_id:S.userId,monat,daten:S.md[monat]||{},aktualisiert:new Date().toISOString()})});
+      const el=document.getElementById('gespeichert');if(el)el.textContent='✓ gespeichert';
+    }catch(e){toast('Speichern fehlgeschlagen: '+e.message,'err');}
+  },700);
+}
+
+// ── Kosten aus der Belege-App ───────────────────────────────────────────────
+// Kosten eines Belegs für den Salon: Netto, wenn Vorsteuer abziehbar ist, sonst Brutto
+// (die USt ist dann echter Aufwand). Privates fällt weg, Gemischtes nur anteilig.
+// Anlagen (über 1000 €, länger nutzbar) zählen nicht als laufende Monatskosten.
+function belegKosten(b){
+  if(b.ist_anlage||b.betrieblich==='nein')return 0;
+  const brutto=b.betrag||0;
+  let k=brutto;
+  if(b.vorsteuer_moeglich==='ja'){
+    if(b.netto!=null)k=b.netto;
+    else if(b.ust_betrag!=null)k=brutto-b.ust_betrag;
+    else if(b.ust_satz!=null)k=brutto/(1+b.ust_satz/100);
+    else k=brutto/1.2;
+  }
+  if(b.betrieblich==='gemischt')k*=(b.betrieblicher_anteil??50)/100;
+  return k;
+}
+function belegMonat(b){return b.monat||(b.datum||'').slice(0,7);}
+
+// Fixkosten und Materialquote als Durchschnitt der letzten 12 Monate bis einschließlich
+// `monat` — einzelne Monate schwanken stark (Jahresversicherung, Großeinkauf).
+function kostenBasis(monat){
+  const von=monatPlus(monat,-11);
+  const imFenster=b=>{const m=belegMonat(b);return m>=von&&m<=monat;};
+  const monateMitBelegen=new Set();
+  const fixNachKat={};let materialSumme=0;
+  S.belege.filter(imFenster).forEach(b=>{
+    monateMitBelegen.add(belegMonat(b));
+    const r=katRolle(b.kategorie),k=belegKosten(b);
+    if(r==='fix')fixNachKat[b.kategorie]=(fixNachKat[b.kategorie]||0)+k;
+    else if(r==='material')materialSumme+=k;
+  });
+  const n=monateMitBelegen.size||1;
+  Object.keys(fixNachKat).forEach(k=>fixNachKat[k]/=n);
+  const fix=Object.values(fixNachKat).reduce((a,b)=>a+b,0);
+
+  let mq,mqQuelle;
+  if(S.einst.materialQuote!==''&&S.einst.materialQuote!=null){mq=zahl(S.einst.materialQuote);mqQuelle='eingestellt';}
+  else{
+    // Material nur aus Monaten, für die auch Umsatz erfasst ist — sonst passt das Verhältnis nicht
+    let mat=0,ums=0,anz=0;
+    for(let i=0;i<12;i++){
+      const m=monatPlus(monat,-i);const u=umsatzNettoSalon(m);
+      if(u<=0)continue;
+      anz++;ums+=u;
+      mat+=S.belege.filter(b=>belegMonat(b)===m&&katRolle(b.kategorie)==='material').reduce((a,b)=>a+belegKosten(b),0);
+    }
+    if(anz>=2&&ums>0){mq=mat/ums*100;mqQuelle='aus '+anz+' Monaten berechnet';}
+    else{mq=MATERIAL_ANNAHME;mqQuelle='Annahme, bis 2 Monate Umsatz erfasst sind';}
+  }
+  mq=Math.min(Math.max(mq,0),80);
+  return{fix,fixNachKat,monateMitBelegen:monateMitBelegen.size,mq,mqQuelle};
+}
+function umsatzNettoSalon(monat){
+  const md=S.md[monat];if(!md)return 0;
+  const ust=zahl(S.einst.ust)/100;
+  return S.einst.personen.reduce((a,p)=>a+(zahl(md[p.id]?.dl)+zahl(md[p.id]?.prod))/(1+ust),0);
+}
+
+// ── Die eigentliche Rechnung ────────────────────────────────────────────────
+// Kosten, die eine Person im Monat verursacht. Mitarbeiterinnen: 14 Gehälter auf 12 Monate
+// verteilt plus Lohnnebenkosten. Chefin: der gewünschte Unternehmerlohn, so wie eingetragen.
+function personalKosten(p){
+  const lohn=zahl(p.lohn);
+  if(p.rolle==='chefin')return lohn;
+  return lohn*14/12*(1+zahl(S.einst.lnk)/100);
+}
+function produktiveStunden(p,abwTage){
+  const wh=zahl(p.wochenstunden);
+  const soll=wh*52/12;
+  const weg=zahl(abwTage)*wh/5;
+  return Math.max(0,soll-weg)*zahl(S.einst.produktiv)/100;
+}
+// Prämie auf den Umsatz über der Schwelle, gestaffelt wie Steuerstufen: jede Stufe gilt nur
+// für den Teil, der in ihren Bereich fällt. `faktor` skaliert die Stufengrenzen (Quartal = 3).
+function stufenPraemie(ueber,faktor=1){
+  if(ueber<=0)return 0;
+  const st=S.einst.stufen.map(s=>({ab:zahl(s.ab)*faktor,p:zahl(s.proz)/100})).sort((a,b)=>a.ab-b.ab);
+  let summe=0;
+  st.forEach((s,i)=>{
+    const bis=i+1<st.length?st[i+1].ab:Infinity;
+    if(ueber>s.ab)summe+=(Math.min(ueber,bis)-s.ab)*s.p;
+  });
+  return summe;
+}
+function berechne(monat,opt={}){
+  const e=S.einst,md=S.md[monat]||{},kb=kostenBasis(monat);
+  const ust=zahl(e.ust)/100,g=zahl(e.gewinn)/100,mq=kb.mq/100,lnk=zahl(e.lnk)/100;
+  const personen=e.personen.map(p=>{
+    const d=md[p.id]||{};
+    let h=produktiveStunden(p,d.abw);
+    let dl=zahl(d.dl)/(1+ust),prod=zahl(d.prod)/(1+ust);
+    // Szenario "weniger am Stuhl": Stunden und Umsatz der Chefin anteilig (gleicher €/h)
+    if(p.rolle==='chefin'&&opt.chefinAnteil!=null){const f=opt.chefinAnteil/100;h*=f;dl*=f;prod*=f;}
+    return{p,h,dl,prod,ist:dl+prod,kosten:personalKosten(p)};
+  });
+  const sumH=personen.reduce((a,x)=>a+x.h,0);
+  personen.forEach(x=>{
+    x.fixAnteil=sumH>0?kb.fix*x.h/sumH:kb.fix/personen.length;
+    x.schwelle=(x.kosten+x.fixAnteil)*(1+g)/(1-mq);
+    x.ueber=x.ist-x.schwelle;
+    x.eurH=x.h>0?x.ist/x.h:0;
+    x.noetigH=x.h>0?x.schwelle/x.h:0;
+    x.praemie=x.p.rolle==='mitarbeiterin'?stufenPraemie(x.ueber)+x.prod*zahl(e.produktProv)/100:0;
+    x.praemieKosten=x.praemie*(1+lnk);
+  });
+  const ist=personen.reduce((a,x)=>a+x.ist,0);
+  const lohn=personen.reduce((a,x)=>a+x.kosten,0);
+  const praemien=personen.reduce((a,x)=>a+x.praemieKosten,0);
+  const db=ist*(1-mq);
+  return{
+    monat,kb,personen,sumH,ist,db,lohn,praemien,
+    material:ist*mq,
+    ergebnis:db-lohn-kb.fix-praemien,
+    hatUmsatz:ist>0,
+    // +100 € brutto Monatslohn → so viel Nettoumsatz mehr pro Monat nötig
+    plus100:100*14/12*(1+lnk)*(1+g)/(1-mq),
+  };
+}
+
+// ── Anmeldung ────────────────────────────────────────────────────────────────
+// Die PIN-Abfrage der Belege-App ist nur die Sperre am Gerät; der eigentliche Schutz der
+// Daten liegt serverseitig (RLS + ist_inhaberin(), siehe supabase/migrations).
+async function boot(){
+  try{
+    S.token=sessionStorage.getItem('sb_token')||localStorage.getItem('sb_token');
+    S.userId=sessionStorage.getItem('sb_uid')||localStorage.getItem('sb_uid');
+  }catch(e){}
+  if(!S.userId||sessionStorage.getItem('pin_ok')!==S.userId){S.screen='login';render();return;}
+  try{
+    if(!S.token)await refreshToken();
+    await laden();
+    S.screen='app';
+  }catch(e){
+    if(tabelleFehlt(e)){S.screen='fehler';S.fehler='Die Cockpit-Tabellen gibt es in Supabase noch nicht. Bitte die Datei supabase/migrations/20261018130000_cockpit_tabellen.sql im SQL-Editor ausführen.';}
+    else if(/Sitzung|Refresh/.test(e.message)){S.screen='login';}
+    else{S.screen='fehler';S.fehler=e.message;}
+  }
+  render();
+}
+
+// ── Darstellung ──────────────────────────────────────────────────────────────
+function render(){
+  const app=document.getElementById('app');
+  if(S.screen==='login'){
+    app.innerHTML='<div class="center"><div style="font-size:44px">📈</div><b>Salon-Cockpit</b><div>Bitte zuerst in der Belege-App anmelden und die PIN eingeben, dann von dort aus öffnen.</div><a class="btn" href="belege.html" style="text-decoration:none">Zur Belege-App</a></div>';return;
+  }
+  if(S.screen==='fehler'){
+    app.innerHTML='<div class="center"><div style="font-size:44px">⚠️</div><div>'+esc(S.fehler)+'</div><a class="btn-light" href="belege.html">Zurück zur Belege-App</a></div>';return;
+  }
+  if(S.screen!=='app')return;
+  const monate=[];for(let i=0;i<18;i++)monate.push(monatPlus(aktMonat(),-i));
+  Object.keys(S.md).forEach(m=>{if(!monate.includes(m))monate.push(m);});
+  monate.sort().reverse();
+  const tab=(id,txt)=>'<button class="nav-btn'+(S.ansicht===id?' active':'')+'" onclick="S.ansicht=\''+id+'\';render()">'+txt+'</button>';
+  app.innerHTML='<div class="header"><div><div class="header-sub"><a href="belege.html">← Belege</a></div><div class="header-title">Salon-Cockpit</div></div>'
+    +'<select class="month-select" onchange="S.monat=this.value;render()">'+monate.map(m=>'<option value="'+m+'"'+(m===S.monat?' selected':'')+'>'+mL(m)+'</option>').join('')+'</select></div>'
+    +'<nav class="nav">'+tab('monat','Monat')+tab('quartal','Quartal')+tab('chefin','Ich am Stuhl')+tab('einst','⚙️')+'</nav>'
+    +'<div class="main" id="main"></div>';
+  const main=document.getElementById('main');
+  if(!S.einst.personen.some(p=>zahl(p.lohn)>0)&&S.ansicht!=='einst'){
+    main.innerHTML='<div class="card"><h2>Willkommen 👋</h2><div style="font-size:13px;line-height:1.6;color:var(--ink2)">Trag zuerst unter ⚙️ die Personen mit ihrem Bruttolohn ein (bei dir selbst: was du dir monatlich als Unternehmerlohn wünschst). Die Fixkosten holt sich das Cockpit automatisch aus deinen Belegen.</div><button class="btn" style="margin-top:12px" onclick="S.ansicht=\'einst\';render()">Zu den Einstellungen</button></div>';
+    return;
+  }
+  if(S.ansicht==='monat')main.innerHTML=htmlMonat();
+  else if(S.ansicht==='quartal')main.innerHTML=htmlQuartal();
+  else if(S.ansicht==='chefin')main.innerHTML=htmlChefin();
+  else main.innerHTML=htmlEinstellungen();
+  if(S.ansicht==='monat')aktualisiereMonat();
+  if(S.ansicht==='chefin')aktualisiereChefin();
+}
+
+function ampel(x){
+  if(x.schwelle<=0)return'';
+  const q=x.ist/x.schwelle;
+  if(q>=1)return'<span class="pill ok">rechnet sich</span>';
+  if(q>=0.9)return'<span class="pill knapp">knapp darunter</span>';
+  return'<span class="pill unter">unter der Schwelle</span>';
+}
+function balken(x){
+  const max=Math.max(x.schwelle*1.4,x.ist,1);
+  const w=Math.min(100,x.ist/max*100),s=x.schwelle/max*100;
+  const farbe=x.ist>=x.schwelle?'var(--green)':(x.ist>=x.schwelle*0.9?'var(--amber)':'var(--red)');
+  return'<div class="bar-track"><div class="bar-fill" style="width:'+w+'%;background:'+farbe+'"></div><div style="position:absolute;top:0;bottom:0;left:'+s+'%;width:2px;background:var(--accent)"></div></div>';
+}
+
+// Monat: Eingaben bleiben stehen (Fokus geht beim Tippen nicht verloren), nur die
+// Ergebnis-Bereiche werden bei jeder Eingabe neu gezeichnet.
+function htmlMonat(){
+  const md=S.md[S.monat]||{};
+  const feld=(pid,key,label,ph)=>'<div><label class="lbl">'+label+'</label><input class="inp" inputmode="decimal" placeholder="'+ph+'" value="'+esc(md[pid]?.[key]??'')+'" oninput="setzeMonat(\''+pid+'\',\''+key+'\',this.value)"/></div>';
+  let h='<div class="card" id="erg-salon"></div>';
+  S.einst.personen.forEach(p=>{
+    h+='<div class="card"><h2>'+esc(p.name)+(p.rolle==='chefin'?' <small>Inhaberin</small>':'')+'</h2>'
+      +'<div class="grid3">'+feld(p.id,'dl','Dienstleistung brutto','0')+feld(p.id,'prod','Produkte brutto','0')+feld(p.id,'abw','Urlaub/Krank/Feiertag','Tage')+'</div>'
+      +'<div id="erg-'+esc(p.id)+'"></div></div>';
+  });
+  h+='<div class="card" id="erg-kosten"></div>';
+  h+='<div class="hint" style="text-align:center">Umsätze brutto aus meinKassa (Monatsbericht pro Mitarbeiterin). <span id="gespeichert"></span></div>';
+  return h;
+}
+function setzeMonat(pid,key,val){
+  const md=S.md[S.monat]=S.md[S.monat]||{};
+  md[pid]=md[pid]||{};md[pid][key]=val;
+  const el=document.getElementById('gespeichert');if(el)el.textContent='…';
+  speichereMonatSpaeter(S.monat);
+  aktualisiereMonat();
+}
+function aktualisiereMonat(){
+  const r=berechne(S.monat);
+  r.personen.forEach(x=>{
+    const el=document.getElementById('erg-'+x.p.id);if(!el)return;
+    if(x.ist<=0&&x.h>0){el.innerHTML='<div class="hint">Schwelle diesen Monat: <b>'+eur(x.schwelle)+' netto</b> ('+eur(x.schwelle*(1+zahl(S.einst.ust)/100))+' brutto) · '+eur2(x.noetigH)+' pro Stunde</div>';return;}
+    el.innerHTML=balken(x)
+      +'<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--ink3)"><span>Ist '+eur(x.ist)+' netto</span><span>Schwelle '+eur(x.schwelle)+'</span></div>'
+      +'<div style="margin:8px 0">'+ampel(x)+'</div>'
+      +'<div class="row"><span>Kosten des Arbeitsplatzes</span><b>'+eur(x.kosten+x.fixAnteil)+'</b></div>'
+      +'<div class="row"><span>Pro produktive Stunde (ist / nötig)</span><b>'+eur2(x.eurH)+' / '+eur2(x.noetigH)+'</b></div>'
+      +'<div class="row"><span>'+(x.ueber>=0?'Über':'Unter')+' der Schwelle</span><b class="'+(x.ueber>=0?'pos':'neg')+'">'+(x.ueber>=0?'+':'')+eur(x.ueber)+'</b></div>'
+      +(x.p.rolle==='mitarbeiterin'?'<div class="row"><span>Prämie (wenn monatlich abgerechnet)</span><b>'+eur2(x.praemie)+'</b></div>':'')
+      +'<div class="row"><span>Produktive Stunden</span><b>'+x.h.toLocaleString('de-AT',{maximumFractionDigits:0})+' h</b></div>';
+  });
+  const s=document.getElementById('erg-salon');
+  if(s){
+    s.innerHTML='<h2>Salon gesamt <small>'+mL(S.monat)+'</small></h2>'
+      +'<div class="grid2"><div><div class="stat-label">Umsatz netto</div><div class="stat-value">'+eur(r.ist)+'</div><div class="stat-sub">'+eur(r.ist*(1+zahl(S.einst.ust)/100))+' brutto</div></div>'
+      +'<div><div class="stat-label">Ergebnis</div><div class="stat-value '+(r.ergebnis>=0?'pos':'neg')+'">'+eur(r.ergebnis)+'</div><div class="stat-sub">nach Löhnen, Fixkosten, Material'+(r.praemien?', Prämien':'')+' und deinem Unternehmerlohn</div></div></div>'
+      +(r.ist>0?'<div class="hint">Personalkostenquote Team (ohne dich): <b>'+proz(r.personen.filter(x=>x.p.rolle!=='chefin').reduce((a,x)=>a+x.kosten,0)/r.ist*100)+'</b> · Pro Mitarbeiterin: +100 € brutto Gehalt brauchen ≈ <b>'+eur(r.plus100)+'</b> mehr Nettoumsatz im Monat.</div>':'<div class="hint">Noch kein Umsatz für diesen Monat eingetragen.</div>');
+  }
+  const k=document.getElementById('erg-kosten');
+  if(k){
+    const kb=r.kb;
+    const zeilen=Object.entries(kb.fixNachKat).sort((a,b)=>b[1]-a[1]).map(([id,v])=>{
+      const kat=S.kats.find(x=>x.id===id);return'<div class="row"><span>'+esc(kat?(kat.icon||'')+' '+kat.label:id)+'</span><b>'+eur(v)+'</b></div>';
+    }).join('');
+    k.innerHTML='<h2>Kostenbasis <small>Ø aus '+kb.monateMitBelegen+' Monat(en) Belege</small></h2>'
+      +(zeilen||'<div class="hint">Keine Fixkosten-Belege in den letzten 12 Monaten gefunden.</div>')
+      +'<div class="row"><span><b>Fixkosten pro Monat</b></span><b>'+eur(kb.fix)+'</b></div>'
+      +'<div class="row"><span>Material/Ware vom Umsatz</span><b>'+proz(kb.mq)+'</b></div>'
+      +'<div class="hint">Materialquote: '+esc(kb.mqQuelle)+'. Fixkosten werden nach produktiven Stunden auf alle verteilt, die am Stuhl stehen — auch auf dich. Anlagen (über 1000 €) zählen hier nicht mit.</div>';
+  }
+}
+
+function htmlQuartal(){
+  const[y,m]=S.monat.split('-').map(Number);
+  const q=Math.floor((m-1)/3);
+  const monate=[0,1,2].map(i=>y+'-'+String(q*3+1+i).padStart(2,'0')).filter(mm=>S.md[mm]&&umsatzNettoSalon(mm)>0);
+  const titel=(q+1)+'. Quartal '+y;
+  if(!monate.length)return'<div class="card"><h2>'+titel+'</h2><div class="hint">Für dieses Quartal ist noch kein Umsatz eingetragen.</div></div>';
+  const summe={};
+  monate.forEach(mm=>berechne(mm).personen.forEach(x=>{
+    const s=summe[x.p.id]=summe[x.p.id]||{p:x.p,ist:0,schwelle:0,prod:0,monatsPraemien:0};
+    s.ist+=x.ist;s.schwelle+=x.schwelle;s.prod+=x.prod;s.monatsPraemien+=x.praemie;
+  }));
+  const lnk=zahl(S.einst.lnk)/100;
+  let gesamtKosten=0;
+  const zeilen=Object.values(summe).map(s=>{
+    const ueber=s.ist-s.schwelle;
+    const pr=s.p.rolle==='mitarbeiterin'?stufenPraemie(ueber,monate.length)+s.prod*zahl(S.einst.produktProv)/100:0;
+    gesamtKosten+=pr*(1+lnk);
+    return'<tr><td>'+esc(s.p.name)+'</td><td>'+eur(s.ist)+'</td><td>'+eur(s.schwelle)+'</td><td class="'+(ueber>=0?'pos':'neg')+'">'+(ueber>=0?'+':'')+eur(ueber)+'</td><td><b>'+(s.p.rolle==='mitarbeiterin'?eur2(pr):'–')+'</b></td><td style="color:var(--ink3)">'+(s.p.rolle==='mitarbeiterin'?eur2(s.monatsPraemien):'–')+'</td></tr>';
+  }).join('');
+  return'<div class="card"><h2>'+titel+' <small>'+monate.map(mL).join(', ')+'</small></h2>'
+    +'<div class="tbl-wrap"><table><tr><th>Person</th><th>Ist netto</th><th>Schwelle</th><th>Differenz</th><th>Prämie Quartal</th><th>zum Vergleich: monatlich</th></tr>'+zeilen+'</table></div>'
+    +'<div class="hint">Prämie brutto. Kostet dich mit Lohnnebenkosten insgesamt ≈ <b>'+eur(gesamtKosten)+'</b>. Pro Quartal abgerechnet gleicht ein schwacher Monat einen starken aus — das ist fairer als monatlich.</div></div>'
+    +htmlStufenErklaerung();
+}
+function htmlStufenErklaerung(){
+  const st=S.einst.stufen.map(s=>({ab:zahl(s.ab),p:zahl(s.proz)})).sort((a,b)=>a.ab-b.ab);
+  return'<div class="card"><h2>So funktioniert die Prämie</h2><div style="font-size:13px;line-height:1.6;color:var(--ink2)">'
+    +'Die <b>Schwelle</b> ist das, was ein Arbeitsplatz einbringen muss: Lohn mit Nebenkosten, Anteil an Miete und Fixkosten, Material und ein Gewinnanteil für den Salon von '+esc(S.einst.gewinn)+' %. Darunter gibt es keine Prämie, aber auch keinen Nachteil.<br>'
+    +'Vom Nettoumsatz <b>über</b> der Schwelle: '+st.map((s,i)=>s.p+' % '+(i+1<st.length?'von '+eur(s.ab)+' bis '+eur(st[i+1].ab):'ab '+eur(s.ab))).join(', ')+' (Grenzen pro Monat; im Quartal mal Anzahl der Monate mit Umsatz).<br>'
+    +'Dazu '+esc(S.einst.produktProv)+' % auf den Netto-Produktverkauf. Urlaub, Krankenstand und Feiertage senken die Schwelle anteilig.</div></div>';
+}
+
+function htmlChefin(){
+  const chefin=S.einst.personen.find(p=>p.rolle==='chefin');
+  if(!chefin)return'<div class="card"><div class="hint">In den Einstellungen ist keine Person als Inhaberin markiert.</div></div>';
+  const basis=berechne(S.monat);
+  if(!basis.hatUmsatz)return'<div class="card"><h2>Ich am Stuhl</h2><div class="hint">Trag zuerst die Umsätze für '+mL(S.monat)+' ein — das Szenario rechnet mit deinen echten Zahlen dieses Monats.</div></div>';
+  const ich=basis.personen.find(x=>x.p.rolle==='chefin');
+  const{teamEurH}=teamWerte(basis);
+  const anteilAmUmsatz=basis.ist>0?ich.ist/basis.ist*100:0;
+  return'<div class="card"><h2>Wie abhängig ist der Salon von dir? <small>'+mL(S.monat)+'</small></h2>'
+    +'<div class="grid2"><div><div class="stat-label">Dein Anteil am Umsatz</div><div class="stat-value">'+proz(anteilAmUmsatz)+'</div><div class="stat-sub">'+eur(ich.ist)+' netto</div></div>'
+    +'<div><div class="stat-label">Pro Stunde</div><div class="stat-value">'+eur2(ich.eurH)+'</div><div class="stat-sub">Team-Schnitt: '+eur2(teamEurH)+'</div></div></div></div>'
+    +'<div class="card"><h2>Wenn ich weniger am Stuhl stehe</h2>'
+    +'<label class="lbl" id="chefin-lbl"></label>'
+    +'<input type="range" min="0" max="100" step="5" value="'+S.chefinAnteil+'" oninput="S.chefinAnteil=+this.value;aktualisiereChefin()"/>'
+    +'<div id="chefin-erg"></div></div>'
+    +'<div id="chefin-neu"></div>';
+}
+function teamWerte(r){
+  const team=r.personen.filter(x=>x.p.rolle==='mitarbeiterin');
+  const ist=team.reduce((a,x)=>a+x.ist,0),h=team.reduce((a,x)=>a+x.h,0);
+  return{team,teamEurH:h>0?ist/h:0};
+}
+// Nur die Ergebnisse neu zeichnen, der Schieberegler bleibt stehen (sonst reißt das Ziehen ab)
+function aktualisiereChefin(){
+  const erg=document.getElementById('chefin-erg');if(!erg)return;
+  const basis=berechne(S.monat),sz=berechne(S.monat,{chefinAnteil:S.chefinAnteil});
+  const ichSz=sz.personen.find(x=>x.p.rolle==='chefin');
+  const{team,teamEurH}=teamWerte(basis);
+  const mq=basis.kb.mq/100,g=zahl(S.einst.gewinn)/100,lnk=zahl(S.einst.lnk)/100;
+  const verlust=basis.ergebnis-sz.ergebnis;
+  const proKopf=team.length?verlust/(1-mq)/team.length:0;
+  // Neue Vollkraft: Fixkosten fallen ohnehin an, sie muss also nur ihre eigenen Kosten,
+  // Material und den Gewinnanteil tragen (Grenzbetrachtung).
+  const lohnNeu=team.length?team.reduce((a,x)=>a+zahl(x.p.lohn),0)/team.length:0;
+  const kostenNeu=lohnNeu*14/12*(1+lnk);
+  const hNeu=produktiveStunden({wochenstunden:'40'},0)*(11/12); // grob: Urlaub/Feiertage im Schnitt
+  const schwelleNeu=kostenNeu*(1+g)/(1-mq);
+  const umsatzNeu=teamEurH*hNeu;
+  const mitNeu=sz.ergebnis+umsatzNeu*(1-mq)-kostenNeu;
+  document.getElementById('chefin-lbl').innerHTML='Meine Stunden am Stuhl: <b>'+S.chefinAnteil+' %</b> von jetzt (≈ '+ichSz.h.toLocaleString('de-AT',{maximumFractionDigits:0})+' h produktiv)';
+  erg.innerHTML='<div class="row"><span>Salon-Ergebnis jetzt</span><b class="'+(basis.ergebnis>=0?'pos':'neg')+'">'+eur(basis.ergebnis)+'</b></div>'
+    +'<div class="row"><span>Salon-Ergebnis mit weniger Stunden von dir</span><b class="'+(sz.ergebnis>=0?'pos':'neg')+'">'+eur(sz.ergebnis)+'</b></div>'
+    +(verlust>0?'<div class="row"><span>Das Team müsste dafür ausgleichen</span><b>+'+eur(proKopf)+' netto pro Kopf/Monat</b></div>':'')
+    +'<div class="hint">Annahme: deine Kosten (Unternehmerlohn) bleiben gleich, dein Umsatz pro Stunde auch. Deine freie Zeit kannst du für Führung, Ausbildung und Marketing nutzen — das bringt Umsatz über das Team, ist hier aber nicht eingerechnet.</div>';
+  document.getElementById('chefin-neu').innerHTML=(team.length?'<div class="card"><h2>Und mit einer zusätzlichen Vollkraft?</h2>'
+    +'<div class="row"><span>Kosten (Lohn wie Ø Team: '+eur(lohnNeu)+' brutto)</span><b>'+eur(kostenNeu)+' / Monat</b></div>'
+    +'<div class="row"><span>Rechnet sich ab</span><b>'+eur(schwelleNeu)+' netto / Monat</b></div>'
+    +'<div class="row"><span>Pro produktive Stunde</span><b>'+eur2(hNeu>0?schwelleNeu/hNeu:0)+'</b></div>'
+    +'<div class="row"><span>Salon-Ergebnis, wenn sie wie das Team-Ø arbeitet</span><b class="'+(mitNeu>=0?'pos':'neg')+'">'+eur(mitNeu)+'</b></div>'
+    +'<div class="hint">Miete und Fixkosten zahlst du ohnehin — eine neue Kraft muss nur ihren eigenen Lohn, Material und den Gewinnanteil einbringen. In den ersten Monaten liegt der Umsatz einer neuen Kraft meist unter dem Team-Schnitt.</div></div>':'');
+}
+
+function htmlEinstellungen(){
+  const e=S.einst;
+  const inp=(pfad,val,ph,breite)=>'<input class="inp" inputmode="decimal" placeholder="'+(ph||'')+'" value="'+esc(val)+'" oninput="setzeEinst(\''+pfad+'\',this.value)"'+(breite?' style="width:'+breite+'"':'')+'/>';
+  let h='<div class="card"><h2>Personen am Stuhl</h2>';
+  e.personen.forEach((p,i)=>{
+    h+='<div style="border-bottom:1px solid #F3EEF5;padding:10px 0">'
+      +'<div style="display:flex;gap:8px;align-items:end"><div style="flex:1"><label class="lbl">Name</label><input class="inp" value="'+esc(p.name)+'" oninput="setzeEinst(\'personen.'+i+'.name\',this.value)"/></div>'
+      +(p.rolle!=='chefin'?'<button class="btn-del" onclick="if(confirm(\'Person entfernen? Ihre eingetragenen Monatswerte bleiben gespeichert.\')){S.einst.personen.splice('+i+',1);render()}">Entfernen</button>':'')+'</div>'
+      +'<div class="grid2" style="margin-top:8px"><div><label class="lbl">'+(p.rolle==='chefin'?'Wunsch-Unternehmerlohn / Monat':'Bruttolohn / Monat')+'</label>'+inp('personen.'+i+'.lohn',p.lohn,'z. B. 2200')+'</div>'
+      +'<div><label class="lbl">Wochenstunden</label>'+inp('personen.'+i+'.wochenstunden',p.wochenstunden,'40')+'</div></div>'
+      +(p.rolle==='chefin'?'<div class="hint">Bei dir: was du dir monatlich auszahlen willst, inkl. deiner Sozialversicherung (SVS). So siehst du, ob der Salon dich auch wirklich bezahlt.</div>':'')
+      +'</div>';
+  });
+  h+='<button class="btn-light" style="margin-top:10px" onclick="S.einst.personen.push({id:\'p\'+Date.now(),name:\'Neue Mitarbeiterin\',rolle:\'mitarbeiterin\',lohn:\'\',wochenstunden:\'40\'});render()">+ Person hinzufügen</button></div>';
+
+  h+='<div class="card"><h2>Rechengrundlagen</h2><div class="grid2">'
+    +'<div><label class="lbl">Lohnnebenkosten %</label>'+inp('lnk',e.lnk,'30')+'</div>'
+    +'<div><label class="lbl">Gewinnanteil für den Salon %</label>'+inp('gewinn',e.gewinn,'10')+'</div>'
+    +'<div><label class="lbl">USt auf Umsätze %</label>'+inp('ust',e.ust,'20')+'</div>'
+    +'<div><label class="lbl">Anteil Stunden an Kundinnen %</label>'+inp('produktiv',e.produktiv,'80')+'</div>'
+    +'<div><label class="lbl">Material/Ware % vom Umsatz</label>'+inp('materialQuote',e.materialQuote,'leer = aus Belegen')+'</div>'
+    +'</div><div class="hint">Lohnnebenkosten: Dienstgeberanteil SV, DB/DZ, Kommunalsteuer, MVK — den genauen Wert kennt deine Lohnverrechnung. 14 Gehälter werden automatisch auf 12 Monate verteilt.</div></div>';
+
+  h+='<div class="card"><h2>Prämienstufen <small>pro Monat, auf Nettoumsatz über der Schwelle</small></h2>';
+  e.stufen.forEach((s,i)=>{
+    h+='<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;font-size:13px">ab +'+inp('stufen.'+i+'.ab',s.ab,'0','90px')+' €  →  '+inp('stufen.'+i+'.proz',s.proz,'10','70px')+' %'
+      +(e.stufen.length>1?'<button class="btn-del" onclick="S.einst.stufen.splice('+i+',1);render()">✕</button>':'')+'</div>';
+  });
+  h+='<button class="btn-light" onclick="S.einst.stufen.push({ab:\'\',proz:\'\'});render()">+ Stufe</button>'
+    +'<div style="margin-top:12px"><label class="lbl">Provision auf Produktverkauf % (netto)</label>'+inp('produktProv',e.produktProv,'5','90px')+'</div></div>';
+
+  h+='<div class="card"><h2>Beleg-Kategorien</h2>';
+  S.kats.forEach(k=>{
+    h+='<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><span style="flex:1;font-size:13px">'+esc((k.icon||'')+' '+k.label)+'</span><select class="inp" style="width:auto;max-width:58%" onchange="S.einst.katRollen[\''+esc(k.id)+'\']=this.value">'
+      +KAT_ROLLEN.map(r=>'<option value="'+r.id+'"'+(katRolle(k.id)===r.id?' selected':'')+'>'+r.label+'</option>').join('')+'</select></div>';
+  });
+  h+='<div class="hint">Personal-Belege zählen nicht, weil die Löhne oben pro Person stehen.</div></div>';
+  h+='<button class="btn" style="width:100%" onclick="einstSpeichern()">Speichern</button>';
+  return h;
+}
+function setzeEinst(pfad,val){
+  const teile=pfad.split('.');let o=S.einst;
+  for(let i=0;i<teile.length-1;i++)o=o[teile[i]];
+  o[teile[teile.length-1]]=val;
+}
+async function einstSpeichern(){
+  try{await speichereEinstellungen();toast('Gespeichert');S.ansicht='monat';render();}
+  catch(e){toast('Speichern fehlgeschlagen: '+e.message,'err');}
+}
+
+boot();
+</script>
+</body>
+</html>
