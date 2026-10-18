@@ -107,7 +107,7 @@ function standardEinstellungen(){
     // bekommt die Grundprämie, für jeden weiteren vollen Schritt Umsatz noch einmal die
     // Schrittprämie. Erreichen die Mitarbeiterinnen zusammen das Teamziel, bekommt jede zusätzlich
     // die Teamprämie.
-    praemie:{faktor:'4,2',basis:'brutto',grund:'100',schritt:'1000',schrittPraemie:'100',teamZiel:'25500',teamPraemie:'100'},
+    praemie:{faktor:'4,2',basis:'brutto',grund:'100',schritt:'1000',schrittPraemie:'100',teamZiel:'25500',teamPraemie:'100',teamStufen:{}},
     produktProv:'0',
     katRollen:{},
   };
@@ -180,6 +180,9 @@ async function laden(){
   const gespeichert=einst?.[0]?.daten||{};
   S.einst={...standardEinstellungen(),...gespeichert};
   S.einst.praemie={...standardEinstellungen().praemie,...(gespeichert.praemie||{})};
+  // Teamprämie in Etappen pro Jahr; ältere Einstellungen (ein Ziel, eine Prämie) werden zur ersten Etappe
+  const ts=S.einst.praemie.teamStufen={...(S.einst.praemie.teamStufen||{})};
+  if(!Object.keys(ts).length)ts[aktMonat().slice(0,4)]=[{ab:S.einst.praemie.teamZiel,praemie:S.einst.praemie.teamPraemie}];
   // Einstellungen aus dem früheren Prozent-Stufen-Modell: dessen Produktprovision nicht übernehmen
   if(!gespeichert.praemie)S.einst.produktProv='0';
   delete S.einst.stufen;
@@ -278,6 +281,14 @@ function produktiveStunden(p,abwTage){
 function praemienUmsatz(x){
   return S.einst.praemie.basis==='netto'?x.ist:x.ist*(1+zahl(S.einst.ust)/100);
 }
+// Teamprämie in Etappen, pro Jahr: es gilt die Liste des Jahres, sonst die des letzten früheren
+// Jahres. So bleiben vergangene Jahre unverändert, wenn die Etappen für ein neues Jahr steigen.
+function teamStufenFuer(monat){
+  const ts=S.einst.praemie.teamStufen||{},jahr=monat.slice(0,4);
+  const jahre=Object.keys(ts).filter(j=>j<=jahr).sort();
+  const liste=jahre.length?ts[jahre[jahre.length-1]]:[];
+  return liste.map(st=>({ab:zahl(st.ab),praemie:zahl(st.praemie)})).filter(st=>st.ab>0).sort((a,b)=>a.ab-b.ab);
+}
 function praemienFaktor(p){
   return p.faktor!=null&&String(p.faktor).trim()!==''?p.faktor:S.einst.praemie.faktor;
 }
@@ -312,13 +323,16 @@ function berechne(monat,opt={}){
   });
   const team=personen.filter(x=>x.p.rolle==='mitarbeiterin');
   const teamUmsatz=team.reduce((a,x)=>a+praemienUmsatz(x),0);
-  const teamZiel=zahl(e.praemie.teamZiel);
-  const teamErreicht=teamZiel>0&&teamUmsatz>=teamZiel;
+  // Es zählt die höchste erreichte Etappe (nicht die Summe aller Etappen)
+  const stufen=teamStufenFuer(monat);
+  const teamStufe=stufen.filter(st=>teamUmsatz>=st.ab).pop()||null;
+  const teamNaechste=stufen.find(st=>teamUmsatz<st.ab)||null;
+  const teamErreicht=!!teamStufe;
   personen.forEach(x=>{
     x.pUmsatz=praemienUmsatz(x);
     x.pSchwelle=praemienSchwelle(x.p);
     x.pEinzel=x.p.rolle==='mitarbeiterin'?einzelPraemie(x.pUmsatz,x.pSchwelle):0;
-    x.pTeam=x.p.rolle==='mitarbeiterin'&&teamErreicht?zahl(e.praemie.teamPraemie):0;
+    x.pTeam=x.p.rolle==='mitarbeiterin'&&teamStufe?teamStufe.praemie:0;
     x.praemie=x.p.rolle==='mitarbeiterin'?x.pEinzel+x.pTeam+x.prod*zahl(e.produktProv)/100:0;
     x.praemieKosten=x.praemie*(1+lnk);
   });
@@ -327,7 +341,7 @@ function berechne(monat,opt={}){
   const praemien=personen.reduce((a,x)=>a+x.praemieKosten,0);
   const db=ist*(1-mq);
   return{
-    monat,kb,personen,sumH,ist,db,lohn,praemien,teamUmsatz,teamZiel,teamErreicht,
+    monat,kb,personen,sumH,ist,db,lohn,praemien,teamUmsatz,teamStufe,teamNaechste,teamErreicht,teamHatStufen:stufen.length>0,
     material:ist*mq,
     ergebnis:db-lohn-kb.fix-praemien,
     hatUmsatz:ist>0,
@@ -457,8 +471,9 @@ function aktualisiereMonat(){
     s.innerHTML='<h2>Salon gesamt <small>'+mL(S.monat)+'</small></h2>'
       +'<div class="grid2"><div><div class="stat-label">Umsatz netto</div><div class="stat-value">'+eur(r.ist)+'</div><div class="stat-sub">'+eur(r.ist*(1+zahl(S.einst.ust)/100))+' brutto</div></div>'
       +'<div><div class="stat-label">Ergebnis</div><div class="stat-value '+(r.ergebnis>=0?'pos':'neg')+'">'+eur(r.ergebnis)+'</div><div class="stat-sub">nach Löhnen, Fixkosten, Material'+(r.praemien?', Prämien':'')+' und deinem Unternehmerlohn</div></div></div>'
-      +(r.teamZiel>0?'<div class="row" style="margin-top:8px"><span>Teamziel Mitarbeiterinnen ('+(S.einst.praemie.basis==='netto'?'netto':'brutto')+')</span><b class="'+(r.teamErreicht?'pos':'')+'">'+eur(r.teamUmsatz)+' / '+eur(r.teamZiel)+(r.teamErreicht?' ✓':'')+'</b></div>'
-        +(r.teamErreicht?'':'<div class="hint" style="margin-top:2px">noch '+eur(r.teamZiel-r.teamUmsatz)+' bis je '+eur(zahl(S.einst.praemie.teamPraemie))+' Teamprämie</div>'):'')
+      +(r.teamHatStufen?'<div class="row" style="margin-top:8px"><span>Team Mitarbeiterinnen ('+(S.einst.praemie.basis==='netto'?'netto':'brutto')+')</span><b>'+eur(r.teamUmsatz)+'</b></div>'
+        +'<div class="row"><span>Teamprämie je Mitarbeiterin</span><b class="'+(r.teamStufe?'pos':'')+'">'+(r.teamStufe?eur(r.teamStufe.praemie)+' (ab '+eur(r.teamStufe.ab)+')':'–')+'</b></div>'
+        +(r.teamNaechste?'<div class="hint" style="margin-top:2px">noch '+eur(r.teamNaechste.ab-r.teamUmsatz)+' bis '+eur(r.teamNaechste.ab)+' → je '+eur(r.teamNaechste.praemie)+'</div>':'<div class="hint" style="margin-top:2px">höchste Etappe erreicht 🎉</div>'):'')
       +(r.ist>0?'<div class="hint">Personalkostenquote Team (ohne dich): <b>'+proz(r.personen.filter(x=>x.p.rolle!=='chefin').reduce((a,x)=>a+x.kosten,0)/r.ist*100)+'</b> · Pro Mitarbeiterin: +100 € brutto Gehalt brauchen ≈ <b>'+eur(r.plus100)+'</b> mehr Nettoumsatz im Monat.</div>':'<div class="hint">Noch kein Umsatz für diesen Monat eingetragen.</div>');
   }
   const k=document.getElementById('erg-kosten');
@@ -503,7 +518,8 @@ function htmlStufenErklaerung(){
   return'<div class="card"><h2>So funktioniert die Prämie</h2><div style="font-size:13px;line-height:1.6;color:var(--ink2)">'
     +'<b>Prämien-Schwelle</b> = Bruttolohn × 14 ÷ 12 × '+esc(pm.faktor)+' (bzw. eigener Faktor der Mitarbeiterin, z. B. 4 für Neue; '+art+'umsatz pro Monat, Dienstleistung + Produkte).<br>'
     +'Wer die Schwelle erreicht, bekommt <b>'+eur(zahl(pm.grund))+'</b>, für jede weiteren vollen '+eur(zahl(pm.schritt))+' Umsatz noch einmal <b>'+eur(zahl(pm.schrittPraemie))+'</b>.<br>'
-    +'Machen die Mitarbeiterinnen zusammen mindestens <b>'+eur(zahl(pm.teamZiel))+'</b>, bekommt jede zusätzlich <b>'+eur(zahl(pm.teamPraemie))+'</b>.'
+    +'Teamprämie '+S.monat.slice(0,4)+' (Umsatz der Mitarbeiterinnen zusammen, es zählt die höchste erreichte Etappe): '
+    +(teamStufenFuer(S.monat).map(st=>'ab <b>'+eur(st.ab)+'</b> je <b>'+eur(st.praemie)+'</b>').join(', ')||'keine')+'.'
     +(zahl(S.einst.produktProv)>0?'<br>Dazu '+esc(S.einst.produktProv)+' % auf den Netto-Produktverkauf.':'')
     +'</div></div>';
 }
@@ -594,10 +610,16 @@ function htmlEinstellungen(){
     +'<div><label class="lbl">je weitere … € Umsatz</label>'+inp('praemie.schritt',pm.schritt,'1000')+'</div>'
     +'<div><label class="lbl">… gibt es nochmal €</label>'+inp('praemie.schrittPraemie',pm.schrittPraemie,'100')+'</div>'
     +'<div><label class="lbl">Provision Produkte % (netto, optional)</label>'+inp('produktProv',e.produktProv,'0')+'</div>'
-    +'<div><label class="lbl">Teamziel Mitarbeiterinnen gesamt €</label>'+inp('praemie.teamZiel',pm.teamZiel,'25500')+'</div>'
-    +'<div><label class="lbl">Teamprämie je Mitarbeiterin €</label>'+inp('praemie.teamPraemie',pm.teamPraemie,'100')+'</div>'
     +'</div>'
     +(beispiel?'<div class="hint">Beispiel '+esc(beispiel.name)+': '+eur(zahl(beispiel.lohn))+' × 14 ÷ 12 × '+esc(pm.faktor)+' = <b>'+eur(praemienSchwelle(beispiel))+'</b> Prämien-Schwelle.</div>':'')
+    +'</div>';
+  h+='<div class="card"><h2>Teamprämie <small>Umsatz der Mitarbeiterinnen zusammen, pro Monat</small></h2>'
+    +Object.keys(pm.teamStufen).sort().map(j=>'<div style="margin-bottom:10px"><div class="lbl">'+j+'</div>'
+      +pm.teamStufen[j].map((st,i)=>'<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px;font-size:13px">ab '+inp('praemie.teamStufen.'+j+'.'+i+'.ab',st.ab,'25500','110px')+' € → je '+inp('praemie.teamStufen.'+j+'.'+i+'.praemie',st.praemie,'100','80px')+' €'
+        +(pm.teamStufen[j].length>1?'<button class="btn-del" onclick="S.einst.praemie.teamStufen[\''+j+'\'].splice('+i+',1);render()">✕</button>':'')+'</div>').join('')
+      +'<button class="btn-light" onclick="neueTeamEtappe(\''+j+'\')">+ Etappe</button></div>').join('')
+    +'<button class="btn-light" onclick="neuesTeamzielJahr()">+ Etappen für '+(Math.max(...Object.keys(pm.teamStufen).map(Number))+1)+'</button>'
+    +'<div class="hint">Es zählt die höchste erreichte Etappe. Ein neues Jahr übernimmt die Etappen des Vorjahres, bis du sie änderst — vergangene Jahre rechnen weiter mit ihren eigenen Etappen.</div>'
     +'</div>';
 
   h+='<div class="card"><h2>Beleg-Kategorien</h2>';
@@ -608,6 +630,18 @@ function htmlEinstellungen(){
   h+='<div class="hint">Personal-Belege zählen nicht, weil die Löhne oben pro Person stehen.</div></div>';
   h+='<button class="btn" style="width:100%" onclick="einstSpeichern()">Speichern</button>';
   return h;
+}
+function neuesTeamzielJahr(){
+  const ts=S.einst.praemie.teamStufen;
+  const letztes=Math.max(...Object.keys(ts).map(Number));
+  ts[String(letztes+1)]=ts[String(letztes)].map(st=>({...st}));
+  render();
+}
+function neueTeamEtappe(jahr){
+  const liste=S.einst.praemie.teamStufen[jahr];
+  const letzte=liste[liste.length-1]||{ab:'25500',praemie:'100'};
+  liste.push({ab:String(zahl(letzte.ab)+1500),praemie:String(zahl(letzte.praemie)+50)});
+  render();
 }
 function setzeEinst(pfad,val){
   const teile=pfad.split('.');let o=S.einst;
