@@ -278,8 +278,12 @@ function produktiveStunden(p,abwTage){
 function praemienUmsatz(x){
   return S.einst.praemie.basis==='netto'?x.ist:x.ist*(1+zahl(S.einst.ust)/100);
 }
+function praemienFaktor(p){
+  return p.faktor!=null&&String(p.faktor).trim()!==''?p.faktor:S.einst.praemie.faktor;
+}
 function praemienSchwelle(p){
-  return zahl(p.lohn)*14/12*zahl(S.einst.praemie.faktor);
+  // Eigener Faktor pro Person (z. B. 4 statt 4,2 für neue Mitarbeiterinnen), sonst der allgemeine
+  return zahl(p.lohn)*14/12*zahl(praemienFaktor(p));
 }
 function einzelPraemie(umsatz,schwelle){
   const pm=S.einst.praemie;
@@ -429,7 +433,7 @@ function praemienZeilen(x,r){
     const rest=zahl(pm.schritt)-((x.pUmsatz-x.pSchwelle)%zahl(pm.schritt));
     naechste='noch '+eur(rest)+' bis weitere '+eur(zahl(pm.schrittPraemie));
   }
-  return'<div class="row"><span>Prämien-Schwelle ('+art+')</span><b>'+eur(x.pSchwelle)+'</b></div>'
+  return'<div class="row"><span>Prämien-Schwelle ('+art+', Faktor '+esc(praemienFaktor(x.p))+')</span><b>'+eur(x.pSchwelle)+'</b></div>'
     +'<div class="row"><span>Umsatz ('+art+')</span><b>'+eur(x.pUmsatz)+'</b></div>'
     +'<div class="row"><span>Prämie Einzel'+(x.pTeam?' + Team':'')+'</span><b class="'+(x.praemie>0?'pos':'')+'">'+eur(x.praemie)+'</b></div>'
     +(naechste?'<div class="hint" style="margin-top:2px">'+naechste+'</div>':'');
@@ -497,7 +501,7 @@ function htmlQuartal(){
 function htmlStufenErklaerung(){
   const pm=S.einst.praemie,art=pm.basis==='netto'?'Netto':'Brutto';
   return'<div class="card"><h2>So funktioniert die Prämie</h2><div style="font-size:13px;line-height:1.6;color:var(--ink2)">'
-    +'<b>Prämien-Schwelle</b> = Bruttolohn × 14 ÷ 12 × '+esc(pm.faktor)+' ('+art+'umsatz pro Monat, Dienstleistung + Produkte).<br>'
+    +'<b>Prämien-Schwelle</b> = Bruttolohn × 14 ÷ 12 × '+esc(pm.faktor)+' (bzw. eigener Faktor der Mitarbeiterin, z. B. 4 für Neue; '+art+'umsatz pro Monat, Dienstleistung + Produkte).<br>'
     +'Wer die Schwelle erreicht, bekommt <b>'+eur(zahl(pm.grund))+'</b>, für jede weiteren vollen '+eur(zahl(pm.schritt))+' Umsatz noch einmal <b>'+eur(zahl(pm.schrittPraemie))+'</b>.<br>'
     +'Machen die Mitarbeiterinnen zusammen mindestens <b>'+eur(zahl(pm.teamZiel))+'</b>, bekommt jede zusätzlich <b>'+eur(zahl(pm.teamPraemie))+'</b>.'
     +(zahl(S.einst.produktProv)>0?'<br>Dazu '+esc(S.einst.produktProv)+' % auf den Netto-Produktverkauf.':'')
@@ -565,7 +569,9 @@ function htmlEinstellungen(){
       +'<div style="display:flex;gap:8px;align-items:end"><div style="flex:1"><label class="lbl">Name</label><input class="inp" value="'+esc(p.name)+'" oninput="setzeEinst(\'personen.'+i+'.name\',this.value)"/></div>'
       +(p.rolle!=='chefin'?'<button class="btn-del" onclick="if(confirm(\'Person entfernen? Ihre eingetragenen Monatswerte bleiben gespeichert.\')){S.einst.personen.splice('+i+',1);render()}">Entfernen</button>':'')+'</div>'
       +'<div class="grid2" style="margin-top:8px"><div><label class="lbl">'+(p.rolle==='chefin'?'Wunsch-Unternehmerlohn / Monat':'Bruttolohn / Monat')+'</label>'+inp('personen.'+i+'.lohn',p.lohn,'z. B. 2200')+'</div>'
-      +'<div><label class="lbl">Wochenstunden</label>'+inp('personen.'+i+'.wochenstunden',p.wochenstunden,'40')+'</div></div>'
+      +'<div><label class="lbl">Wochenstunden</label>'+inp('personen.'+i+'.wochenstunden',p.wochenstunden,'40')+'</div>'
+      +(p.rolle==='mitarbeiterin'?'<div><label class="lbl">Prämien-Faktor (leer = '+esc(e.praemie.faktor)+')</label>'+inp('personen.'+i+'.faktor',p.faktor??'',esc(e.praemie.faktor))+'</div>':'')
+      +'</div>'
       +(p.rolle==='chefin'?'<div class="hint">Bei dir: was du dir monatlich auszahlen willst, inkl. deiner Sozialversicherung (SVS). So siehst du, ob der Salon dich auch wirklich bezahlt.</div>':'')
       +'</div>';
   });
@@ -582,7 +588,7 @@ function htmlEinstellungen(){
   const pm=e.praemie;
   const beispiel=e.personen.find(p=>p.rolle==='mitarbeiterin'&&zahl(p.lohn)>0);
   h+='<div class="card"><h2>Prämie <small>pro Monat</small></h2><div class="grid2">'
-    +'<div><label class="lbl">Faktor (Bruttolohn × 14 ÷ 12 × Faktor)</label>'+inp('praemie.faktor',pm.faktor,'4,2')+'</div>'
+    +'<div><label class="lbl">Faktor allgemein (Bruttolohn × 14 ÷ 12 × Faktor)</label>'+inp('praemie.faktor',pm.faktor,'4,2')+'</div>'
     +'<div><label class="lbl">Umsatz zählt</label><select class="inp" onchange="S.einst.praemie.basis=this.value"><option value="brutto"'+(pm.basis!=='netto'?' selected':'')+'>brutto (wie meinKassa)</option><option value="netto"'+(pm.basis==='netto'?' selected':'')+'>netto</option></select></div>'
     +'<div><label class="lbl">Prämie bei Erreichen €</label>'+inp('praemie.grund',pm.grund,'100')+'</div>'
     +'<div><label class="lbl">je weitere … € Umsatz</label>'+inp('praemie.schritt',pm.schritt,'1000')+'</div>'
