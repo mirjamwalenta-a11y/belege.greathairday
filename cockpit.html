@@ -110,6 +110,9 @@ function standardEinstellungen(){
     praemie:{faktor:'4,2',basis:'brutto',grund:'100',schritt:'1000',schrittPraemie:'100',teamZiel:'25500',teamPraemie:'100',teamStufen:{}},
     produktProv:'0',
     katRollen:{},
+    // Feste Monatsbeträge (Miete, Strom, …); sobald einer eingetragen ist, ersetzen sie die
+    // aus den Belegen geschätzten Fixkosten
+    fixPosten:[{name:'Miete',betrag:''},{name:'Strom & Heizung',betrag:''},{name:'Versicherungen',betrag:''},{name:'Steuerberatung',betrag:''}],
   };
 }
 
@@ -141,7 +144,12 @@ function toast(msg,typ){
 }
 function katRolle(id){
   const r=S.einst?.katRollen?.[id];if(r)return r;
-  if(id==='k1')return'material';if(id==='k3')return'personal';return'fix';
+  if(id==='k1')return'material';if(id==='k3')return'personal';
+  // Eigene Kategorien der Belege-App haben andere IDs — dann nach dem Namen zuordnen
+  const label=(S.kats.find(k=>k.id===id)?.label||'').toLowerCase();
+  if(/personal|lohn|gehalt/.test(label))return'personal';
+  if(/material|einkauf|ware/.test(label))return'material';
+  return'fix';
 }
 
 // ── Supabase ─────────────────────────────────────────────────────────────────
@@ -255,7 +263,15 @@ function kostenBasis(monat){
     else{mq=MATERIAL_ANNAHME;mqQuelle='Annahme, bis 2 Monate Umsatz erfasst sind';}
   }
   mq=Math.min(Math.max(mq,0),80);
-  return{fix,fixNachKat,monateMitBelegen:monateMitBelegen.size,mq,mqQuelle};
+  const posten=(S.einst.fixPosten||[]).filter(x=>zahl(x.betrag)>0);
+  const ausBelegen=Object.entries(fixNachKat).sort((a,b)=>b[1]-a[1]).map(([id,v])=>{
+    const kat=S.kats.find(x=>x.id===id);return{label:kat?(kat.icon||'')+' '+kat.label:id,betrag:v};
+  });
+  if(posten.length){
+    const zeilen=posten.map(x=>({label:x.name||'Posten',betrag:zahl(x.betrag)}));
+    return{fix:zeilen.reduce((a,x)=>a+x.betrag,0),fixZeilen:zeilen,fixQuelle:'eingetragen',mq,mqQuelle};
+  }
+  return{fix,fixZeilen:ausBelegen,fixQuelle:'Ø aus '+monateMitBelegen.size+' Monat(en) Belege',mq,mqQuelle};
 }
 function umsatzNettoSalon(monat){
   const md=S.md[monat];if(!md)return 0;
@@ -479,14 +495,12 @@ function aktualisiereMonat(){
   const k=document.getElementById('erg-kosten');
   if(k){
     const kb=r.kb;
-    const zeilen=Object.entries(kb.fixNachKat).sort((a,b)=>b[1]-a[1]).map(([id,v])=>{
-      const kat=S.kats.find(x=>x.id===id);return'<div class="row"><span>'+esc(kat?(kat.icon||'')+' '+kat.label:id)+'</span><b>'+eur(v)+'</b></div>';
-    }).join('');
-    k.innerHTML='<h2>Kostenbasis <small>Ø aus '+kb.monateMitBelegen+' Monat(en) Belege</small></h2>'
-      +(zeilen||'<div class="hint">Keine Fixkosten-Belege in den letzten 12 Monaten gefunden.</div>')
+    const zeilen=kb.fixZeilen.map(x=>'<div class="row"><span>'+esc(x.label)+'</span><b>'+eur(x.betrag)+'</b></div>').join('');
+    k.innerHTML='<h2>Kostenbasis <small>'+esc(kb.fixQuelle)+'</small></h2>'
+      +(zeilen||'<div class="hint">Noch keine Fixkosten — unter ⚙️ → „Fixkosten pro Monat“ eintragen.</div>')
       +'<div class="row"><span><b>Fixkosten pro Monat</b></span><b>'+eur(kb.fix)+'</b></div>'
       +'<div class="row"><span>Material/Ware vom Umsatz</span><b>'+proz(kb.mq)+'</b></div>'
-      +'<div class="hint">Materialquote: '+esc(kb.mqQuelle)+'. Fixkosten werden nach produktiven Stunden auf alle verteilt, die am Stuhl stehen — auch auf dich. Anlagen (über 1000 €) zählen hier nicht mit.</div>';
+      +'<div class="hint">'+(kb.fixQuelle==='eingetragen'?'Fixkosten aus ⚙️ → „Fixkosten pro Monat“. ':'')+'Materialquote: '+esc(kb.mqQuelle)+'. Fixkosten werden nach produktiven Stunden auf alle verteilt, die am Stuhl stehen — auch auf dich. Anlagen (über 1000 €) zählen hier nicht mit.</div>';
   }
 }
 
@@ -621,6 +635,15 @@ function htmlEinstellungen(){
     +'<button class="btn-light" onclick="neuesTeamzielJahr()">+ Etappen für '+(Math.max(...Object.keys(pm.teamStufen).map(Number))+1)+'</button>'
     +'<div class="hint">Es zählt die höchste erreichte Etappe. Ein neues Jahr übernimmt die Etappen des Vorjahres, bis du sie änderst — vergangene Jahre rechnen weiter mit ihren eigenen Etappen.</div>'
     +'</div>';
+
+  e.fixPosten=e.fixPosten||[];
+  h+='<div class="card"><h2>Fixkosten pro Monat</h2>'
+    +e.fixPosten.map((x,i)=>'<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">'
+      +'<input class="inp" style="flex:1" placeholder="z. B. Miete" value="'+esc(x.name)+'" oninput="setzeEinst(\'fixPosten.'+i+'.name\',this.value)"/>'
+      +inp('fixPosten.'+i+'.betrag',x.betrag,'0','110px')+' €'
+      +'<button class="btn-del" onclick="S.einst.fixPosten.splice('+i+',1);render()">✕</button></div>').join('')
+    +'<button class="btn-light" onclick="S.einst.fixPosten.push({name:\'\',betrag:\'\'});render()">+ Posten</button>'
+    +'<div class="hint">Feste Kosten pro Monat, netto (bei Jahresbeträgen ÷ 12). Löhne gehören nicht hierher, die stehen oben bei den Personen. Sobald hier ein Betrag steht, rechnet das Cockpit mit diesen Werten statt mit dem Durchschnitt aus den Belegen.</div></div>';
 
   h+='<div class="card"><h2>Beleg-Kategorien</h2>';
   S.kats.forEach(k=>{
