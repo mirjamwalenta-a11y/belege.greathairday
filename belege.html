@@ -138,7 +138,6 @@
 <script>
 // ── Config ────────────────────────────────────────────────────────────────────
 const SB_URL = 'https://lpuxvvfrrcnbuzafscyk.supabase.co';
-const INVITE_CODE = 'GREATHAIR2026'; // <-- hier Code ändern um Zugang zu sperren
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxwdXh2dmZycmNuYnV6YWZzY3lrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ2ODIxNDcsImV4cCI6MjEwMDI1ODE0N30.6VZUmmXj_x3Q8J55s_tbOHcW5-U5OXllGoEBhypaVfI';
 const MONATE=['Jänner','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
 const BEZAHLT_VIA=[
@@ -187,11 +186,6 @@ async function sbDelete(path,token){
 }
 
 // Auth
-async function signUp(email,password){
-  const d=await sbPost('/auth/v1/signup',{email,password});
-  if(d.error)throw new Error(d.error.message||d.msg||'Fehler');
-  return d;
-}
 async function signIn(email,password){
   const d=await sbPost('/auth/v1/token?grant_type=password',{email,password});
   if(d.error)throw new Error(d.error.message||d.msg||'Fehler');
@@ -224,12 +218,12 @@ let S={
   editId:null,editData:{},
   manuell:emptyM(),
   loading:false,
-  authMode:'login',
   authEmail:'',authPass:'',authName:'',authErr:'',
   draft:null,
   tipps:null,tippsDatum:null,tippsLoading:false,
   bulkQueue:[],bulkTotal:0,bulkDone:0,bulkFehlerFiles:[],bulkModus:false,
   filterPruefung:false,
+  eingang:[],geteiltAnzahl:0,
 };
 
 function emptyM(){return{datum:'',betrag:'',art:'ausgabe',lieferant:'',kategorie:'',beschreibung:'',anlass:'',teilnehmer:'',bezahlt_via:'geschaeftskonto'};}
@@ -320,7 +314,75 @@ async function loadBelege(){
   // Liste entfernen (Löschen wirkt lokal, bis zum nächsten Neuladen).
   if(Array.isArray(d))S.belege=d.map(b=>({...b,id:String(b.id)}));
   syncOsAufgaben();
+  ladeEingang();
 }
+// ── Eingang ──────────────────────────────────────────────────────────────────
+// Zwei Wege, auf denen Belege ohne Hochladen hereinkommen:
+// 1) Gmail-Label "Belege" → Skript gmail-eingang/Code.gs → Edge Function beleg-eingang
+//    → Tabelle beleg_eingang + Storage (Ordner <uid>/eingang/)
+// 2) Android „Teilen → Belege“ → sw.js legt die Dateien im Cache GETEILT_CACHE ab
+// Beide laufen beim Übernehmen durch dieselbe Erkennung wie das Hochladen (verarbeiteFileBulk).
+const GETEILT_CACHE='belege-geteilt';
+function escHtml(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+async function ladeEingang(){
+  let eingang=[],geteilt=0;
+  try{
+    const d=await sbGet('/rest/v1/beleg_eingang?status=eq.neu&order=erhalten.asc&select=id,dateiname,mime,pfad,absender,betreff',S.token);
+    if(Array.isArray(d))eingang=d; // Tabelle fehlt noch (Migration nicht ausgeführt) → einfach leer
+  }catch(e){}
+  try{if(self.caches){const c=await caches.open(GETEILT_CACHE);geteilt=(await c.keys()).length;}}catch(e){}
+  S.eingang=eingang;S.geteiltAnzahl=geteilt;
+  // Direkt aus „Teilen“ geöffnet: geteilte Dateien sofort verarbeiten
+  if(new URLSearchParams(location.search).has('geteilt')){
+    history.replaceState(null,'',location.pathname);
+    if(geteilt&&S.screen==='app'&&!S.loading){await eingangUebernehmen();return;}
+  }
+  if(S.screen==='app')render();
+}
+function eingangBanner(){
+  const n=(S.eingang?.length||0)+(S.geteiltAnzahl||0);
+  if(!n||S.loading)return'';
+  const namen=(S.eingang||[]).slice(0,5).map(e=>'<div style="font-size:11px;color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">📄 '+escHtml(e.dateiname)+(e.absender?' <span style="color:var(--ink3)">· '+escHtml(e.absender.replace(/<.*>/,'').trim())+'</span>':'')+'</div>').join('')
+    +(S.geteiltAnzahl?'<div style="font-size:11px;color:var(--ink2)">📲 '+S.geteiltAnzahl+' geteilte Datei(en)</div>':'')
+    +((S.eingang?.length||0)>5?'<div style="font-size:11px;color:var(--ink3)">… und '+(S.eingang.length-5)+' weitere</div>':'');
+  return'<div class="card" style="border:1.5px solid var(--accentlight);margin-bottom:12px">'
+    +'<div style="font-size:14px;font-weight:700;color:var(--accent);margin-bottom:6px">📥 '+n+(n===1?' neuer Beleg':' neue Belege')+' im Eingang</div>'
+    +namen
+    +'<button class="btn-primary" style="margin-top:10px" onclick="eingangUebernehmen()">Jetzt übernehmen</button></div>';
+}
+async function eingangUebernehmen(){
+  if(S.loading)return;
+  const files=[],geholt=[];
+  try{
+    if(self.caches){
+      const c=await caches.open(GETEILT_CACHE);
+      for(const req of await c.keys()){
+        const r=await c.match(req);
+        if(r){const blob=await r.blob();files.push(new File([blob],decodeURIComponent(r.headers.get('X-Dateiname')||'geteilt'),{type:blob.type}));}
+        await c.delete(req);
+      }
+    }
+  }catch(e){console.warn('Geteilte Dateien nicht lesbar:',e);}
+  for(const e of S.eingang||[]){
+    try{
+      const blob=await fetchBelegDatei(SB_URL+'/storage/v1/object/belege/'+e.pfad);
+      files.push(new File([blob],e.dateiname,{type:e.mime||blob.type}));geholt.push(e);
+    }catch(err){toast('Eingang: '+e.dateiname+' konnte nicht geladen werden','err');}
+  }
+  S.eingang=(S.eingang||[]).filter(e=>!geholt.includes(e));S.geteiltAnzahl=0;
+  // Schon vor der Analyse als übernommen markieren und die Eingangs-Kopie löschen: die
+  // Analyse lädt die Datei ohnehin neu in den Speicher hoch, und das Original bleibt in Gmail.
+  for(const e of geholt){
+    try{
+      await sbPatch('/rest/v1/beleg_eingang?id=eq.'+e.id,{status:'uebernommen'},S.token);
+      await fetch(SB_URL+'/storage/v1/object/belege/'+e.pfad,{method:'DELETE',headers:{apikey:SB_KEY,Authorization:'Bearer '+S.token}});
+    }catch(err){console.warn('Eingang nicht als übernommen markiert:',err);}
+  }
+  if(!files.length){render();return;}
+  S.ansicht='neu';
+  await verarbeiteFileBulk(files);
+}
+
 async function insertBeleg(b){
   const payload={
     user_id:S.userId,
@@ -473,19 +535,6 @@ async function syncOsAufgaben(){
 async function doLogin(){
   S.authErr='';render();
   try{
-    const d=await signIn(S.authEmail,S.authPass);
-    S.token=d.access_token;S.userId=d.user?.id;
-    saveLocal();
-    await afterLogin();
-  }catch(e){S.authErr=e.message;render();}
-}
-async function doRegister(){
-  S.authErr='';render();
-  if(!S.authName.trim()){S.authErr='Bitte Name eingeben';render();return;}
-  if((S.authCode||'').trim().toUpperCase()!==INVITE_CODE){S.authErr='Einladungs-Code falsch oder fehlt';render();return;}
-  try{
-    await signUp(S.authEmail,S.authPass);
-    // Nach Registrierung sofort einloggen um gültigen Token zu bekommen
     const d=await signIn(S.authEmail,S.authPass);
     S.token=d.access_token;S.userId=d.user?.id;
     saveLocal();
@@ -2081,20 +2130,16 @@ function render(){
   if(S.screen==='loading'){app.innerHTML='<div class="spinner"></div><div style="color:var(--ink3);font-size:13px;margin-top:12px">Wird geladen…</div>';return;}
 
   if(S.screen==='auth'){
-    const isL=S.authMode==='login';
     app.innerHTML='<div class="fullscreen dark-screen">'
       +'<div class="auth-logo">💼</div>'
       +'<div class="auth-title">Meine Belege</div>'
-      +'<div class="auth-sub">'+(isL?'Willkommen zurück':'Neues Konto erstellen')+'</div>'
+      +'<div class="auth-sub">Willkommen zurück</div>'
       +'<div class="auth-form">'
-      +(!isL?'<input class="auth-inp" placeholder="Name deines Betriebs" value="'+S.authName+'" oninput="S.authName=this.value"/>':'')
       +'<input class="auth-inp" type="email" placeholder="E-Mail" value="'+S.authEmail+'" oninput="S.authEmail=this.value"/>'
-      +'<input class="auth-inp" type="password" placeholder="Passwort (min. 6 Zeichen)" value="'+S.authPass+'" oninput="S.authPass=this.value" onkeydown="if(event.key===\'Enter\')'+(isL?'doLogin()':'doRegister()')+'"/>'
-      +(!isL?'<input class="auth-inp" placeholder="Einladungs-Code" value="'+(S.authCode||'')+'" oninput="S.authCode=this.value.toUpperCase()" style="letter-spacing:2px;text-transform:uppercase" onkeydown="if(event.key===\'Enter\')doRegister()"/>':'')
+      +'<input class="auth-inp" type="password" placeholder="Passwort" value="'+S.authPass+'" oninput="S.authPass=this.value" onkeydown="if(event.key===\'Enter\')doLogin()"/>'
       +'<div class="auth-error">'+S.authErr+'</div>'
-      +'<button class="auth-btn" onclick="'+(isL?'doLogin()':'doRegister()')+'">'+( isL?'Einloggen':'Registrieren')+'</button>'
+      +'<button class="auth-btn" onclick="doLogin()">Einloggen</button>'
       +'</div>'
-      +'<div class="auth-switch">'+(isL?'Noch kein Konto? <span onclick="S.authMode=\'register\';S.authErr=\'\';render()">Registrieren</span>':'Schon registriert? <span onclick="S.authMode=\'login\';S.authErr=\'\';render()">Einloggen</span>')+'</div>'
       +'<div class="ai-badge" style="margin-top:24px;color:rgba(255,255,255,0.3)">✦ AI Circle Community Tool ✦</div>'
       +'</div>';
     return;
@@ -2154,7 +2199,7 @@ function render(){
 
   if(ansicht==='dashboard'){
     const bars=katS.map(k=>'<div style="margin-bottom:12px"><div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:3px"><span>'+k.icon+' '+k.label+'</span><span style="font-weight:600">'+eur(k.summe)+'</span></div><div class="bar-track"><div class="bar-fill" style="background:#7C6B8A;width:'+Math.min(100,ausg?((k.summe/ausg)*100):0)+'%"></div></div></div>').join('');
-    inhalt='<div style="font-size:12px;color:var(--ink3);margin-bottom:12px">'+mL(S.monat)+' · '+bfm.length+' Belege</div>'
+    inhalt=eingangBanner()+'<div style="font-size:12px;color:var(--ink3);margin-bottom:12px">'+mL(S.monat)+' · '+bfm.length+' Belege</div>'
       +'<div class="grid2"><div class="card" style="margin-bottom:0"><div class="stat-label">Ausgaben</div><div class="stat-value" style="color:var(--red)">'+eur(ausg)+'</div><div class="stat-sub">'+bfm.filter(b=>b.art==='ausgabe').length+' Belege</div></div><div class="card" style="margin-bottom:0"><div class="stat-label">Einnahmen</div><div class="stat-value" style="color:var(--green)">'+eur(einn)+'</div><div class="stat-sub">'+bfm.filter(b=>b.art==='einnahme').length+' Belege</div></div></div>'
       +(katS.length?'<div class="card"><div class="section-title">Ausgaben nach Kategorie</div>'+bars+'</div>':'')
       +(bfm.length===0?'<div class="empty"><div class="empty-icon">📂</div><div style="font-size:14px">Noch keine Belege für<br><strong>'+mL(S.monat)+'</strong>.</div><button class="btn-primary" style="margin-top:16px;width:auto;padding:10px 24px" onclick="S.ansicht=\'neu\';render()">Ersten Beleg erfassen</button></div>':'')
@@ -2191,7 +2236,7 @@ function render(){
 
   else if(ansicht==='neu'){
     const mO=kats.map(k=>'<option value="'+k.id+'"'+(S.manuell.kategorie===k.id?' selected':'')+'>'+k.icon+' '+k.label+'</option>').join('');
-    inhalt=''
+    inhalt=eingangBanner()
       +(!S.loading&&S.bulkFehlerFiles.length
         ?'<div class="card" style="background:#FEE2E2;border:1px solid #FCA5A5;margin-bottom:12px">'
           +'<div style="font-size:13px;font-weight:600;color:#991B1B;margin-bottom:6px">⚠️ '+S.bulkFehlerFiles.length+' Datei(en) beim letzten Bulk-Upload fehlgeschlagen</div>'
@@ -2297,7 +2342,7 @@ function render(){
   }
 
   app.innerHTML='<div class="header"><div class="header-left">'+logoH+'<div><div class="header-sub">'+(p?.name||'')+'</div><div class="header-title">Meine Belege</div></div></div><select class="month-select" onchange="S.monat=this.value;render()">'+mOpts+'</select></div>'
-    +'<nav class="nav"><button class="nav-btn'+(ansicht==='dashboard'?' active':'')+'" onclick="S.ansicht=\'dashboard\';render()">Übersicht</button><button class="nav-btn'+(ansicht==='belege'?' active':'')+'" onclick="S.ansicht=\'belege\';render()">Belege</button><button class="nav-btn'+(ansicht==='neu'?' active':'')+'" onclick="S.ansicht=\'neu\';render()">+ Neu</button><button class="nav-btn'+(ansicht==='abschluss'?' active':'')+'" onclick="S.ansicht=\'abschluss\';render()">📊 Abschluss</button><button class="nav-btn'+(ansicht==='tipps'?' active':'')+'" onclick="S.ansicht=\'tipps\';render()">💡 Tipps</button><button class="nav-btn'+(ansicht==='einstellungen'?' active':'')+'" onclick="S.ansicht=\'einstellungen\';render()">⚙️</button></nav>'
+    +'<nav class="nav"><button class="nav-btn'+(ansicht==='dashboard'?' active':'')+'" onclick="S.ansicht=\'dashboard\';render()">Übersicht</button><button class="nav-btn'+(ansicht==='belege'?' active':'')+'" onclick="S.ansicht=\'belege\';render()">Belege</button><button class="nav-btn'+(ansicht==='neu'?' active':'')+'" onclick="S.ansicht=\'neu\';render()">+ Neu</button><button class="nav-btn'+(ansicht==='abschluss'?' active':'')+'" onclick="S.ansicht=\'abschluss\';render()">📊 Abschluss</button><button class="nav-btn'+(ansicht==='tipps'?' active':'')+'" onclick="S.ansicht=\'tipps\';render()">💡 Tipps</button><button class="nav-btn" onclick="location.href=\'cockpit.html\'" title="Salon-Cockpit">📈</button><button class="nav-btn'+(ansicht==='einstellungen'?' active':'')+'" onclick="S.ansicht=\'einstellungen\';render()">⚙️</button></nav>'
     +'<main class="main">'+inhalt+'</main>';
 
   const dz=document.getElementById('dz');
