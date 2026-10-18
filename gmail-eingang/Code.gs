@@ -1,22 +1,32 @@
-// Google Apps Script für dein Gmail-Konto: holt Rechnungen mit dem Label "Belege" ab und
-// schickt PDF-/Bild-Anhänge an die Belege-App (Supabase-Funktion beleg-eingang).
-// Danach bekommt die Mail das Label "Belege-übertragen". Einrichtung: EINGANG-EINRICHTEN.md
+// Google Apps Script für dein Gmail-Konto: findet Rechnungen in Gmail und schickt
+// PDF-/Bild-Anhänge an die Belege-App (Supabase-Funktion beleg-eingang).
+//
+// Automatisch erkannt werden neue Mails mit PDF-Anhang und einem der SUCHWOERTER
+// (kein Gmail-Filter nötig). Alles andere kann man von Hand mit dem Label "Belege"
+// markieren. Übertragene Mails bekommen das Label "Belege-erledigt".
+// Einrichtung: EINGANG-EINRICHTEN.md
 //
 // Zugangsdaten stehen NICHT hier, sondern unter Projekteinstellungen → Skripteigenschaften:
 //   FUNKTION_URL   = https://<projekt>.supabase.co/functions/v1/beleg-eingang
 //   EINGANG_TOKEN  = derselbe geheime Wert wie das Supabase-Secret EINGANG_TOKEN
 
 const LABEL_NEU = 'Belege';
-const LABEL_ERLEDIGT = 'Belege-übertragen';
+const LABEL_ERLEDIGT = 'Belege-erledigt';
+const SUCHWOERTER = ['Rechnung', 'Invoice', 'Faktura', 'Gutschrift', 'Beleg'];
 const ERLAUBT = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'image/heic'];
 const MIN_BILD_BYTES = 30 * 1024; // kleinere Bilder sind fast immer Logos oder Signaturen
 const MAX_BYTES = 10 * 1024 * 1024;
 
-// Einmal von Hand ausführen: legt die Labels an und startet den 15-Minuten-Zeitplan
+// Einmal von Hand ausführen: legt die Labels an, merkt sich das Startdatum (ältere Mails
+// werden nicht automatisch geholt) und startet den 15-Minuten-Zeitplan.
 function einrichten() {
   einstellungen_();
   label_(LABEL_NEU);
   label_(LABEL_ERLEDIGT);
+  const p = PropertiesService.getScriptProperties();
+  if (!p.getProperty('START')) {
+    p.setProperty('START', Utilities.formatDate(new Date(), 'Europe/Vienna', 'yyyy/MM/dd'));
+  }
   ScriptApp.getProjectTriggers()
     .filter((t) => t.getHandlerFunction() === 'belegeAbholen')
     .forEach((t) => ScriptApp.deleteTrigger(t));
@@ -28,8 +38,17 @@ function belegeAbholen() {
   const { url, token } = einstellungen_();
   const neu = label_(LABEL_NEU);
   const erledigt = label_(LABEL_ERLEDIGT);
+  const start = PropertiesService.getScriptProperties().getProperty('START');
 
-  neu.getThreads(0, 20).forEach((thread) => {
+  // Von Hand markierte Mails + automatisch gefundene Rechnungen seit dem Einrichten
+  const suche = 'has:attachment filename:pdf (' + SUCHWOERTER.join(' OR ') + ')'
+    + ' -label:' + LABEL_ERLEDIGT.toLowerCase() + (start ? ' after:' + start : '');
+  const threads = neu.getThreads(0, 20).concat(GmailApp.search(suche, 0, 20));
+  const gesehen = {};
+
+  threads.forEach((thread) => {
+    if (gesehen[thread.getId()]) return;
+    gesehen[thread.getId()] = true;
     let allesOk = true;
     thread.getMessages().forEach((msg) => {
       const dateien = msg.getAttachments({ includeInlineImages: false })
