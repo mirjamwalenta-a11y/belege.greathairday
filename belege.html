@@ -138,7 +138,6 @@
 <script>
 // ── Config ────────────────────────────────────────────────────────────────────
 const SB_URL = 'https://lpuxvvfrrcnbuzafscyk.supabase.co';
-const INVITE_CODE = 'GREATHAIR2026'; // <-- hier Code ändern um Zugang zu sperren
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxwdXh2dmZycmNuYnV6YWZzY3lrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ2ODIxNDcsImV4cCI6MjEwMDI1ODE0N30.6VZUmmXj_x3Q8J55s_tbOHcW5-U5OXllGoEBhypaVfI';
 const MONATE=['Jänner','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
 const BEZAHLT_VIA=[
@@ -187,11 +186,6 @@ async function sbDelete(path,token){
 }
 
 // Auth
-async function signUp(email,password){
-  const d=await sbPost('/auth/v1/signup',{email,password});
-  if(d.error)throw new Error(d.error.message||d.msg||'Fehler');
-  return d;
-}
 async function signIn(email,password){
   const d=await sbPost('/auth/v1/token?grant_type=password',{email,password});
   if(d.error)throw new Error(d.error.message||d.msg||'Fehler');
@@ -224,7 +218,6 @@ let S={
   editId:null,editData:{},
   manuell:emptyM(),
   loading:false,
-  authMode:'login',
   authEmail:'',authPass:'',authName:'',authErr:'',
   draft:null,
   tipps:null,tippsDatum:null,tippsLoading:false,
@@ -473,19 +466,6 @@ async function syncOsAufgaben(){
 async function doLogin(){
   S.authErr='';render();
   try{
-    const d=await signIn(S.authEmail,S.authPass);
-    S.token=d.access_token;S.userId=d.user?.id;
-    saveLocal();
-    await afterLogin();
-  }catch(e){S.authErr=e.message;render();}
-}
-async function doRegister(){
-  S.authErr='';render();
-  if(!S.authName.trim()){S.authErr='Bitte Name eingeben';render();return;}
-  if((S.authCode||'').trim().toUpperCase()!==INVITE_CODE){S.authErr='Einladungs-Code falsch oder fehlt';render();return;}
-  try{
-    await signUp(S.authEmail,S.authPass);
-    // Nach Registrierung sofort einloggen um gültigen Token zu bekommen
     const d=await signIn(S.authEmail,S.authPass);
     S.token=d.access_token;S.userId=d.user?.id;
     saveLocal();
@@ -2081,20 +2061,16 @@ function render(){
   if(S.screen==='loading'){app.innerHTML='<div class="spinner"></div><div style="color:var(--ink3);font-size:13px;margin-top:12px">Wird geladen…</div>';return;}
 
   if(S.screen==='auth'){
-    const isL=S.authMode==='login';
     app.innerHTML='<div class="fullscreen dark-screen">'
       +'<div class="auth-logo">💼</div>'
       +'<div class="auth-title">Meine Belege</div>'
-      +'<div class="auth-sub">'+(isL?'Willkommen zurück':'Neues Konto erstellen')+'</div>'
+      +'<div class="auth-sub">Willkommen zurück</div>'
       +'<div class="auth-form">'
-      +(!isL?'<input class="auth-inp" placeholder="Name deines Betriebs" value="'+S.authName+'" oninput="S.authName=this.value"/>':'')
       +'<input class="auth-inp" type="email" placeholder="E-Mail" value="'+S.authEmail+'" oninput="S.authEmail=this.value"/>'
-      +'<input class="auth-inp" type="password" placeholder="Passwort (min. 6 Zeichen)" value="'+S.authPass+'" oninput="S.authPass=this.value" onkeydown="if(event.key===\'Enter\')'+(isL?'doLogin()':'doRegister()')+'"/>'
-      +(!isL?'<input class="auth-inp" placeholder="Einladungs-Code" value="'+(S.authCode||'')+'" oninput="S.authCode=this.value.toUpperCase()" style="letter-spacing:2px;text-transform:uppercase" onkeydown="if(event.key===\'Enter\')doRegister()"/>':'')
+      +'<input class="auth-inp" type="password" placeholder="Passwort" value="'+S.authPass+'" oninput="S.authPass=this.value" onkeydown="if(event.key===\'Enter\')doLogin()"/>'
       +'<div class="auth-error">'+S.authErr+'</div>'
-      +'<button class="auth-btn" onclick="'+(isL?'doLogin()':'doRegister()')+'">'+( isL?'Einloggen':'Registrieren')+'</button>'
+      +'<button class="auth-btn" onclick="doLogin()">Einloggen</button>'
       +'</div>'
-      +'<div class="auth-switch">'+(isL?'Noch kein Konto? <span onclick="S.authMode=\'register\';S.authErr=\'\';render()">Registrieren</span>':'Schon registriert? <span onclick="S.authMode=\'login\';S.authErr=\'\';render()">Einloggen</span>')+'</div>'
       +'<div class="ai-badge" style="margin-top:24px;color:rgba(255,255,255,0.3)">✦ AI Circle Community Tool ✦</div>'
       +'</div>';
     return;
