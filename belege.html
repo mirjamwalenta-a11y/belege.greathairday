@@ -380,7 +380,7 @@ async function eingangUebernehmen(){
   }
   if(!files.length){render();return;}
   S.ansicht='neu';
-  await verarbeiteFileBulk(files);
+  await verarbeiteFileBulk(files,{nichtAufteilen:geholt.length>0});
 }
 
 async function insertBeleg(b){
@@ -1540,11 +1540,13 @@ async function pdfEvtlAufteilen(file){
     return null;
   }
 }
-async function verarbeiteFileBulk(files){
+async function verarbeiteFileBulk(files,opt={}){
   if(!files||!files.length)return;
   if(files.length===1){
     const nurDatei=files[0];
-    if(nurDatei.type==='application/pdf'){
+    // Rechnungen aus dem Eingang (Gmail) sind fast immer EINE mehrseitige Rechnung — dort nicht
+    // nach Aufteilen fragen, sonst landen Folgeseiten (AGB, Einzelverbindungen) als eigene Belege
+    if(nurDatei.type==='application/pdf'&&!opt.nichtAufteilen){
       const aufgeteilt=await pdfEvtlAufteilen(nurDatei);
       if(aufgeteilt){files=aufgeteilt;}
       else{await verarbeiteFile(nurDatei);return;}

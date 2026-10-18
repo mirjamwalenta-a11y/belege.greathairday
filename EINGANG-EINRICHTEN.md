@@ -1,12 +1,12 @@
 # Beleg-Eingang einrichten (Gmail + „Teilen“ am Android-Handy)
 
 Ziel: Rechnungen, die per Mail kommen, landen ohne Herunterladen und Hochladen in der
-Belege-App. Du setzt in Gmail das Label **Belege** (von Hand oder automatisch per
-Filter); spätestens 15 Minuten später zeigt die App „📥 neue Belege im Eingang“.
+Belege-App. Neue Rechnungen mit PDF-Anhang erkennt das Skript selbst; alles andere markierst du
+mit dem Label **Belege**. Spätestens 15 Minuten später zeigt die App „📥 neue Belege im Eingang“.
 Die Erkennung und das Prüf-Fenster laufen dann wie beim normalen Hochladen.
 
 ```
-Gmail-Label „Belege“ → Google-Skript (alle 15 min) → Supabase-Funktion beleg-eingang
+Rechnungs-Mails / Label „Belege“ → Google-Skript (alle 15 min) → Supabase-Funktion beleg-eingang
   → Eingang (nur für dich lesbar) → Belege-App: „Jetzt übernehmen“ → Erkennung + Prüfen
 ```
 
@@ -48,23 +48,26 @@ Mit dem Gmail-Konto angemeldet, in dem die Rechnungen ankommen:
 3. Links **⚙️ Projekteinstellungen** → ganz unten **Skripteigenschaften** → zwei Einträge:
    - `FUNKTION_URL` = die Adresse aus Schritt 3.5
    - `EINGANG_TOKEN` = dasselbe Token wie in Schritt 2
+   - `SUPABASE_KEY` = der **Publishable key** (`sb_publishable_…`) aus Supabase →
+     Project Settings → API Keys (nicht der Secret key!)
 4. Zurück zum Editor → oben die Funktion **`einrichten`** auswählen → **Ausführen**.
 5. Google fragt nach Berechtigungen (Gmail lesen/Labels ändern, externe Anfragen).
    Weil das Skript von dir selbst ist, warnt Google „App nicht überprüft“ →
    **Erweitert → Zu Belege-Eingang wechseln → Zulassen**. Das Skript läuft nur in deinem Konto.
 
-Danach gibt es in Gmail die Labels **Belege** und **Belege-übertragen**, und das Skript läuft alle 15 Minuten.
+Danach gibt es in Gmail die Labels **Belege** und **Belege-erledigt**, und das Skript läuft alle 15 Minuten.
 
-## 5. Gmail: Rechnungen automatisch markieren
+## 5. Gmail: was automatisch geholt wird
 
-Gmail im Browser → Suchleiste → Pfeil rechts (Suchoptionen):
+Kein Gmail-Filter nötig: Das Skript sucht selbst alle Mails **ab dem Tag der Einrichtung**
+mit PDF-Anhang und einem der Wörter *Rechnung, Invoice, Faktura, Gutschrift, Beleg*
+(Liste `SUCHWOERTER` oben im Skript). Ältere Mails werden nicht automatisch geholt.
 
-- **Von:** die Rechnungsadressen deiner Lieferanten, mit `OR` getrennt
-  (z. B. `rechnung@lieferant-a.at OR invoice@lieferant-b.com`)
-- **Hat Anhang** anhaken
-- **Filter erstellen** → **Label anwenden: Belege** → optional „Auch auf passende Konversationen anwenden“
+Alles andere — ältere Rechnungen, Fotos, Mails ohne diese Wörter — von Hand markieren:
+Mail öffnen → ⋮ → **Label ändern** → **Belege**.
 
-Einzelne Mails am Handy: Mail öffnen → ⋮ → **Labels ändern** → **Belege**.
+Falsch erkannte Mails sind kein Problem: In der App wird jeder Beleg vor dem Speichern
+im Prüf-Fenster angezeigt und kann verworfen werden.
 
 > Manche Anbieter schicken keine PDF, sondern nur einen Link zum Kundenportal. Solche
 > Rechnungen weiter selbst herunterladen und über „Teilen → Belege“ oder Hochladen erfassen.
@@ -85,7 +88,7 @@ Einzelne Mails am Handy: Mail öffnen → ⋮ → **Labels ändern** → **Beleg
 - **script.google.com → Ausführungen**: zeigt jeden Lauf und Fehlermeldungen.
   `401` = Token in Skript und Supabase stimmt nicht überein.
   `500 Inhaberin nicht eindeutig` = `app_inhaberin` ist leer oder hat mehr als einen Eintrag.
-- Mails mit Fehler behalten das Label **Belege** und werden beim nächsten Lauf erneut versucht;
+- Mails mit Fehler bekommen nicht das Label **Belege-erledigt** und werden beim nächsten Lauf erneut versucht;
   doppelt übertragene Anhänge erkennt die Funktion selbst.
 - Kleine Bilder (unter 30 KB) werden absichtlich übersprungen — das sind fast immer Logos
   oder E-Mail-Signaturen.
