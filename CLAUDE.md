@@ -62,10 +62,11 @@ etwas anderes war.
 
 ## Automatische Prüfung
 
-**Achtung Belege-App:** Das wöchentliche Audit unten prüft nur das
-gemeinsame Projekt `wrxlaltgtgkdomklgrlj`, **nicht** das Belege-Projekt
-`lpuxvvfrrcnbuzafscyk`. Für die Belege-Tabellen gibt es derzeit keine
-automatische RLS-Prüfung, hier also besonders auf Regel 1 achten.
+**Belege-App:** Das wöchentliche Audit (Workflow im Repo
+`lernquiz.greathairday`) prüft auch das Belege-Projekt
+`lpuxvvfrrcnbuzafscyk`, sobald dort das Secret `SUPABASE_DB_URL_BELEGE`
+gesetzt ist (Anleitung: `SICHERHEIT-RLS-CHECK.md` im Lernquiz-Repo,
+Abschnitt 4). Funde kommen dort als Issue mit dem Label `rls-audit-belege`.
 
 `.github/workflows/rls-audit.yml` prüft wöchentlich automatisch alle
 Tabellen im Supabase-Projekt auf fehlende RLS und legt bei einem Fund ein
