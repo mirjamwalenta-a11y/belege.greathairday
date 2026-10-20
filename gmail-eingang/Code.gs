@@ -14,7 +14,10 @@
 
 const LABEL_NEU = 'Belege';
 const LABEL_ERLEDIGT = 'Belege-erledigt';
-const SUCHWOERTER = ['Rechnung', 'Invoice', 'Faktura', 'Gutschrift', 'Beleg'];
+// Gmail sucht nach ganzen Wörtern: zusammengesetzte Wörter (z. B. VERBUNDs
+// „Teilzahlungsvorschreibung“) müssen deshalb einzeln in der Liste stehen.
+const SUCHWOERTER = ['Rechnung', 'Invoice', 'Faktura', 'Gutschrift', 'Beleg',
+  'Vorschreibung', 'Teilzahlungsvorschreibung', 'Jahresabrechnung', 'Abrechnung'];
 const ERLAUBT = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'image/heic'];
 const MIN_BILD_BYTES = 30 * 1024; // kleinere Bilder sind fast immer Logos oder Signaturen
 const MAX_BYTES = 10 * 1024 * 1024;
