@@ -1,0 +1,112 @@
+# RLS-Audit für das Belege-Projekt lpuxvvfrrcnbuzafscyk (siehe CLAUDE.md)
+# Gleicher Ablauf wie das Audit für das gemeinsame Projekt im Repo lernquiz.greathairday.
+#
+# Prüft wöchentlich, ob es Tabellen ohne Row Level Security gibt.
+# Fund → GitHub-Issue mit Label „rls-audit“ (bzw. Kommentar, wenn schon eines offen ist).
+# Kein Fund und ein Issue ist noch offen → Issue wird mit Kommentar geschlossen.
+#
+# Setup: Repository-Secret SUPABASE_DB_URL_BELEGE (in DIESEM Repo) mit der Verbindung des
+# Lese-Kontos „rls_pruefung“ im Belege-Projekt über den Session Pooler.
+# Anleitung: SICHERHEIT-RLS-CHECK.md im Repo lernquiz.greathairday, Abschnitt 4.
+
+name: RLS-Audit
+
+on:
+  schedule:
+    - cron: "17 5 * * 1"   # montags 05:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: rls-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Tabellen ohne RLS suchen
+        id: pruefung
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL_BELEGE }}
+          PGCONNECT_TIMEOUT: "20"
+        run: |
+          set -euo pipefail
+          if [ -z "${SUPABASE_DB_URL}" ]; then
+            echo "::error::Secret SUPABASE_DB_URL_BELEGE fehlt. Das RLS-Audit läuft erst nach dem Setup (SICHERHEIT-RLS-CHECK.md im Repo lernquiz.greathairday, Abschnitt 4)."
+            exit 1
+          fi
+          command -v psql >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client; }
+
+          # Alle normalen und partitionierten Tabellen außerhalb der Supabase-/Postgres-Systemschemas,
+          # bei denen RLS nicht aktiviert ist. Ausgabe: schema.tabelle, eine pro Zeile.
+          psql "${SUPABASE_DB_URL}" -v ON_ERROR_STOP=1 -X -A -t -o funde.txt <<'SQL'
+          SELECT format('%I.%I', n.nspname, c.relname)
+          FROM pg_class c
+          JOIN pg_namespace n ON n.oid = c.relnamespace
+          WHERE c.relkind IN ('r', 'p')
+            AND NOT c.relrowsecurity
+            AND n.nspname NOT LIKE 'pg\_%'
+            AND n.nspname NOT IN (
+              'information_schema', 'auth', 'storage', 'realtime', '_realtime', 'extensions',
+              'graphql', 'graphql_public', 'pgsodium', 'pgsodium_masks', 'vault', 'net', 'cron',
+              'pgbouncer', 'supabase_functions', 'supabase_migrations', '_analytics', 'topology'
+            )
+          ORDER BY 1;
+          SQL
+
+          sed -i '/^$/d' funde.txt
+          anzahl=$(wc -l < funde.txt | tr -d ' ')
+          echo "anzahl=${anzahl}" >> "$GITHUB_OUTPUT"
+          if [ "${anzahl}" -gt 0 ]; then
+            echo "::warning::${anzahl} Tabelle(n) ohne RLS gefunden."
+            cat funde.txt
+          else
+            echo "Alle geprüften Tabellen haben RLS."
+          fi
+
+      - name: Issue anlegen oder aktualisieren
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ANZAHL: ${{ steps.pruefung.outputs.anzahl }}
+          LAUF: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          offen=$(gh issue list --label rls-audit --state open --json number --jq '.[0].number // empty')
+
+          if [ "${ANZAHL}" -eq 0 ]; then
+            if [ -n "${offen}" ]; then
+              gh issue close "${offen}" --comment "RLS-Audit vom $(date -u +%F): Alle geprüften Tabellen haben wieder RLS. Lauf: ${LAUF}"
+            fi
+            exit 0
+          fi
+
+          {
+            echo "Das wöchentliche RLS-Audit hat **${ANZAHL} Tabelle(n) ohne Row Level Security** gefunden:"
+            echo
+            sed 's/^/- `/; s/$/`/' funde.txt
+            echo
+            echo "Ohne RLS kann jede:r mit dem öffentlichen anon-Key diese Tabellen über die Supabase-API lesen und je nach Rechten auch ändern."
+            echo
+            echo "**Sofortmaßnahme** je Tabelle (RLS ohne Policy sperrt erst einmal alles):"
+            echo
+            echo '```sql'
+            sed 's/^/ALTER TABLE /; s/$/ ENABLE ROW LEVEL SECURITY;/' funde.txt
+            echo '```'
+            echo
+            echo "Danach die passenden Policies anlegen. Vorgehen: \`SICHERHEIT-RLS-CHECK.md\` im Repo lernquiz.greathairday, Abschnitt 2."
+            echo
+            echo "Lauf: ${LAUF}"
+          } > bericht.md
+
+          if [ -n "${offen}" ]; then
+            gh issue comment "${offen}" --body-file bericht.md
+          else
+            gh label create rls-audit --color B60205 --description "Fund aus dem automatischen RLS-Audit" --force
+            gh issue create --title "RLS-Audit: ${ANZAHL} Tabelle(n) ohne Row Level Security" --label rls-audit --body-file bericht.md
+          fi

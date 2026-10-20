@@ -62,11 +62,11 @@ etwas anderes war.
 
 ## Automatische Prüfung
 
-**Belege-App:** Das wöchentliche Audit (Workflow im Repo
-`lernquiz.greathairday`) prüft auch das Belege-Projekt
-`lpuxvvfrrcnbuzafscyk`, sobald dort das Secret `SUPABASE_DB_URL_BELEGE`
-gesetzt ist (Anleitung: `SICHERHEIT-RLS-CHECK.md` im Lernquiz-Repo,
-Abschnitt 4). Funde kommen dort als Issue mit dem Label `rls-audit-belege`.
+**Belege-App:** Das Belege-Projekt `lpuxvvfrrcnbuzafscyk` hat ein eigenes
+wöchentliches Audit in diesem Repo (`.github/workflows/rls-audit.yml`,
+Secret `SUPABASE_DB_URL_BELEGE`). Funde kommen hier als Issue mit dem
+Label `rls-audit`. Der Absatz unten beschreibt das Audit für das
+gemeinsame Projekt im Repo `lernquiz.greathairday`.
 
 `.github/workflows/rls-audit.yml` prüft wöchentlich automatisch alle
 Tabellen im Supabase-Projekt auf fehlende RLS und legt bei einem Fund ein
