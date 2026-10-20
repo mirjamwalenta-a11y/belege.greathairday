@@ -60,8 +60,10 @@ Danach gibt es in Gmail die Labels **Belege** und **Belege-erledigt**, und das S
 ## 5. Gmail: was automatisch geholt wird
 
 Kein Gmail-Filter nötig: Das Skript sucht selbst alle Mails **ab dem Tag der Einrichtung**
-mit PDF-Anhang und einem der Wörter *Rechnung, Invoice, Faktura, Gutschrift, Beleg*
-(Liste `SUCHWOERTER` oben im Skript). Ältere Mails werden nicht automatisch geholt.
+mit PDF-Anhang und einem der Wörter *Rechnung, Invoice, Faktura, Gutschrift, Beleg, Vorschreibung,
+Teilzahlungsvorschreibung, Jahresabrechnung, Abrechnung*
+(Liste `SUCHWOERTER` oben im Skript). Gmail sucht nach ganzen Wörtern: „Teilzahlungsvorschreibung“
+wird von „Vorschreibung“ nicht gefunden, zusammengesetzte Wörter müssen einzeln in die Liste. Ältere Mails werden nicht automatisch geholt.
 
 Alles andere — ältere Rechnungen, Fotos, Mails ohne diese Wörter — von Hand markieren:
 Mail öffnen → ⋮ → **Label ändern** → **Belege**.
