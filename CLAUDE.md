@@ -23,6 +23,18 @@ etwas anderes war.
    Policy verweigert per Default für alle) und explizit nachfragen statt
    zu raten.
 
+   **Seit 2026-10-30 zusätzlich: explizite `GRANT`s in derselben Migration.**
+   Supabase vergibt für neue Tabellen in `public` keine Data-API-Rechte
+   mehr automatisch (gilt auch für neu aufgesetzte Projekte, Preview-Branches
+   und `supabase db reset`). Ohne `GRANT` antwortet die API mit
+   „permission denied“. Nur die Rollen und Rechte vergeben, die die App
+   wirklich braucht — **nicht** die Supabase-Vorlage mit `grant select ...
+   to anon` blind übernehmen. `anon` bekommt nur dann ein Recht, wenn auch
+   eine anon-Policy begründet ist (Regel oben). Tabellen, auf die nur über
+   eine `SECURITY DEFINER`-Funktion zugegriffen wird, brauchen keine
+   Grants für `anon`/`authenticated`. Muster siehe `SICHERHEIT-RLS-CHECK.md`
+   im Repo `lernquiz.greathairday`, Abschnitt 2.
+
 2. **Nie Zugangsdaten, private E-Mail-Adressen oder andere persönliche
    Daten im Klartext in Code, Kommentaren oder Dokumentation.** Auch nicht
    als "Convenience"-Vorbefüllung in einem Input-Feld (`value="..."`) —
