@@ -18,6 +18,9 @@ const SUCHWOERTER = ['Rechnung', 'Invoice', 'Faktura', 'Gutschrift', 'Beleg'];
 const ERLAUBT = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'image/heic'];
 const MIN_BILD_BYTES = 30 * 1024; // kleinere Bilder sind fast immer Logos oder Signaturen
 const MAX_BYTES = 10 * 1024 * 1024;
+// Manche Absender (z. B. VERBUND) schicken PDFs als "application/octet-stream".
+// Dann zählt die Dateiendung; die Supabase-Funktion prüft den echten Inhalt (%PDF) ohnehin nach.
+const ENDUNGEN = { pdf: 'application/pdf', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', heic: 'image/heic' };
 
 // Einmal von Hand ausführen: legt die Labels an, merkt sich das Startdatum (ältere Mails
 // werden nicht automatisch geholt) und startet den 15-Minuten-Zeitplan.
@@ -53,14 +56,21 @@ function belegeAbholen() {
     gesehen[thread.getId()] = true;
     let allesOk = true;
     thread.getMessages().forEach((msg) => {
-      const dateien = msg.getAttachments({ includeInlineImages: false })
-        .map((a) => ({ a, mime: String(a.getContentType()).split(';')[0].trim().toLowerCase() }))
+      const anhaenge = msg.getAttachments({ includeInlineImages: false });
+      const dateien = anhaenge
+        .map((a) => ({ a, mime: mimeVon_(a) }))
         .filter(({ a, mime }) =>
           ERLAUBT.indexOf(mime) >= 0 &&
           a.getSize() <= MAX_BYTES &&
           !(mime.indexOf('image/') === 0 && a.getSize() < MIN_BILD_BYTES))
         .map(({ a, mime }) => ({ name: a.getName(), mime, base64: Utilities.base64Encode(a.getBytes()) }));
-      if (!dateien.length) return;
+      if (!dateien.length) {
+        if (anhaenge.length) {
+          console.warn('Kein passender Anhang: ' + msg.getSubject() + ' – '
+            + anhaenge.map((a) => a.getName() + ' (' + a.getContentType() + ', ' + a.getSize() + ' B)').join(', '));
+        }
+        return;
+      }
 
       const headers = { 'x-eingang-token': token };
       if (apikey) headers['apikey'] = apikey;
@@ -83,6 +93,13 @@ function belegeAbholen() {
       thread.addLabel(erledigt);
     }
   });
+}
+
+function mimeVon_(a) {
+  const mime = String(a.getContentType()).split(';')[0].trim().toLowerCase();
+  if (ERLAUBT.indexOf(mime) >= 0) return mime;
+  const endung = String(a.getName()).split('.').pop().toLowerCase();
+  return ENDUNGEN[endung] || mime;
 }
 
 function einstellungen_() {

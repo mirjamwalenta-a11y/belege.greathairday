@@ -90,5 +90,8 @@ im Prüf-Fenster angezeigt und kann verworfen werden.
   `500 Inhaberin nicht eindeutig` = `app_inhaberin` ist leer oder hat mehr als einen Eintrag.
 - Mails mit Fehler bekommen nicht das Label **Belege-erledigt** und werden beim nächsten Lauf erneut versucht;
   doppelt übertragene Anhänge erkennt die Funktion selbst.
+- **Mail hat „Belege-erledigt“, ist aber nicht in der App:** Label **Belege-erledigt** entfernen und
+  Label **Belege** setzen. Beim nächsten Lauf (spätestens 15 Minuten) wird sie erneut geholt.
+  Unter **Ausführungen** steht bei solchen Mails „Kein passender Anhang: …“ mit Dateiname und Typ.
 - Kleine Bilder (unter 30 KB) werden absichtlich übersprungen — das sind fast immer Logos
   oder E-Mail-Signaturen.
