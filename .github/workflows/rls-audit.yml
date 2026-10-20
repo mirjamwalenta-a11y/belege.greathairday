@@ -5,7 +5,7 @@
 # Fund → GitHub-Issue mit Label „rls-audit“ (bzw. Kommentar, wenn schon eines offen ist).
 # Kein Fund und ein Issue ist noch offen → Issue wird mit Kommentar geschlossen.
 #
-# Setup: Repository-Secret SUPABASE_DB_URL_BELEGE (in DIESEM Repo) mit der Verbindung des
+# Setup: Repository-Secret SUPABASE_DB_URL_BELEGE oder SUPABASE_DB_URL (in DIESEM Repo) mit der Verbindung des
 # Lese-Kontos „rls_pruefung“ im Belege-Projekt über den Session Pooler.
 # Anleitung: SICHERHEIT-RLS-CHECK.md im Repo lernquiz.greathairday, Abschnitt 4.
 
@@ -32,12 +32,12 @@ jobs:
       - name: Tabellen ohne RLS suchen
         id: pruefung
         env:
-          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL_BELEGE }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL_BELEGE || secrets.SUPABASE_DB_URL }}
           PGCONNECT_TIMEOUT: "20"
         run: |
           set -euo pipefail
           if [ -z "${SUPABASE_DB_URL}" ]; then
-            echo "::error::Secret SUPABASE_DB_URL_BELEGE fehlt. Das RLS-Audit läuft erst nach dem Setup (SICHERHEIT-RLS-CHECK.md im Repo lernquiz.greathairday, Abschnitt 4)."
+            echo "::error::Secret SUPABASE_DB_URL_BELEGE (oder SUPABASE_DB_URL) fehlt in diesem Repo. Das RLS-Audit läuft erst nach dem Setup (SICHERHEIT-RLS-CHECK.md im Repo lernquiz.greathairday, Abschnitt 4)."
             exit 1
           fi
           command -v psql >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client; }
