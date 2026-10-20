@@ -49,6 +49,7 @@ function belegeAbholen() {
   const suche = 'has:attachment filename:pdf (' + SUCHWOERTER.join(' OR ') + ')'
     + ' -label:' + LABEL_ERLEDIGT.toLowerCase() + (start ? ' after:' + start : '');
   const threads = neu.getThreads(0, 20).concat(GmailApp.search(suche, 0, 20));
+  console.log(threads.length + ' Mail-Verläufe gefunden (Label „' + LABEL_NEU + '“ und Suche).');
   const gesehen = {};
 
   threads.forEach((thread) => {
@@ -84,6 +85,10 @@ function belegeAbholen() {
       if (antwort.getResponseCode() !== 200) {
         allesOk = false;
         console.error('Übertragung fehlgeschlagen (' + antwort.getResponseCode() + '): ' + msg.getSubject() + ' – ' + antwort.getContentText());
+      } else {
+        // Ergebnis je Datei protokollieren (ok / schon vorhanden / übersprungen: …), damit unter
+        // „Ausführungen“ sichtbar ist, warum eine Rechnung nicht in der App landet
+        console.log(msg.getSubject() + ' – ' + antwort.getContentText());
       }
     });
     // Nur bei Erfolg umlabeln — sonst wird es beim nächsten Lauf erneut versucht
