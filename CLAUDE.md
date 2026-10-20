@@ -64,7 +64,7 @@ etwas anderes war.
 
 **Belege-App:** Das Belege-Projekt `lpuxvvfrrcnbuzafscyk` hat ein eigenes
 wöchentliches Audit in diesem Repo (`.github/workflows/rls-audit.yml`,
-Secret `SUPABASE_DB_URL_BELEGE`). Funde kommen hier als Issue mit dem
+Secret `SUPABASE_DB_URL_BELEGE` oder `SUPABASE_DB_URL`). Funde kommen hier als Issue mit dem
 Label `rls-audit`. Der Absatz unten beschreibt das Audit für das
 gemeinsame Projekt im Repo `lernquiz.greathairday`.
 
