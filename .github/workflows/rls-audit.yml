@@ -7,6 +7,7 @@
 #
 # Setup: Repository-Secret SUPABASE_DB_URL_BELEGE oder SUPABASE_DB_URL (in DIESEM Repo) mit der Verbindung des
 # Lese-Kontos „rls_pruefung“ im Belege-Projekt über den Session Pooler.
+# Fehlt das Secret, wird die Prüfung mit einer Warnung übersprungen (Lauf bleibt grün).
 # Anleitung: SICHERHEIT-RLS-CHECK.md im Repo lernquiz.greathairday, Abschnitt 4.
 
 name: RLS-Audit
@@ -37,8 +38,10 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "${SUPABASE_DB_URL}" ]; then
-            echo "::error::Secret SUPABASE_DB_URL_BELEGE (oder SUPABASE_DB_URL) fehlt in diesem Repo. Das RLS-Audit läuft erst nach dem Setup (SICHERHEIT-RLS-CHECK.md im Repo lernquiz.greathairday, Abschnitt 4)."
-            exit 1
+            # Bis zum Setup nur warnen statt rot werden (keine wöchentlichen Fehler-Mails).
+            echo "::warning::Secret SUPABASE_DB_URL_BELEGE (oder SUPABASE_DB_URL) fehlt in diesem Repo. Prüfung übersprungen, bis das Setup erledigt ist (SICHERHEIT-RLS-CHECK.md im Repo lernquiz.greathairday, Abschnitt 4)."
+            echo "uebersprungen=true" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
           command -v psql >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client; }
 
@@ -70,6 +73,7 @@ jobs:
           fi
 
       - name: Issue anlegen oder aktualisieren
+        if: steps.pruefung.outputs.uebersprungen != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
