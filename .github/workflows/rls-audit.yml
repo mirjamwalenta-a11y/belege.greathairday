@@ -5,9 +5,9 @@
 # Fund → GitHub-Issue mit Label „rls-audit“ (bzw. Kommentar, wenn schon eines offen ist).
 # Kein Fund und ein Issue ist noch offen → Issue wird mit Kommentar geschlossen.
 #
-# Setup: Repository-Secret SUPABASE_DB_URL_BELEGE oder SUPABASE_DB_URL (in DIESEM Repo) mit der Verbindung des
-# Lese-Kontos „rls_pruefung“ im Belege-Projekt über den Session Pooler.
-# Fehlt das Secret, wird die Prüfung mit einer Warnung übersprungen (Lauf bleibt grün).
+# Setup (einfach): Repository-Secret RLS_PRUEFUNG_PASSWORT = Passwort des Lese-Kontos rls_pruefung.
+# Alternativ: SUPABASE_DB_URL_BELEGE oder SUPABASE_DB_URL mit der kompletten Session-Pooler-URL.
+# Alle Secrets in DIESEM Repo. Fehlt das Secret, wird die Prüfung mit einer Warnung übersprungen (Lauf bleibt grün).
 # Anleitung: SICHERHEIT-RLS-CHECK.md im Repo lernquiz.greathairday, Abschnitt 4.
 
 name: RLS-Audit
@@ -34,16 +34,36 @@ jobs:
         id: pruefung
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL_BELEGE || secrets.SUPABASE_DB_URL }}
+          RLS_PASSWORT: ${{ secrets.RLS_PRUEFUNG_PASSWORT }}
           PGCONNECT_TIMEOUT: "20"
         run: |
           set -euo pipefail
-          if [ -z "${SUPABASE_DB_URL}" ]; then
+          if [ -z "${SUPABASE_DB_URL}" ] && [ -z "${RLS_PASSWORT}" ]; then
             # Bis zum Setup nur warnen statt rot werden (keine wöchentlichen Fehler-Mails).
-            echo "::warning::Secret SUPABASE_DB_URL_BELEGE (oder SUPABASE_DB_URL) fehlt in diesem Repo. Prüfung übersprungen, bis das Setup erledigt ist (SICHERHEIT-RLS-CHECK.md im Repo lernquiz.greathairday, Abschnitt 4)."
+            echo "::warning::Secret RLS_PRUEFUNG_PASSWORT (oder SUPABASE_DB_URL_BELEGE) fehlt in diesem Repo. Prüfung übersprungen, bis das Setup erledigt ist."
             echo "uebersprungen=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           command -v psql >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client; }
+
+          # Einfacher Weg: nur das Passwort des Lese-Kontos rls_pruefung als Secret.
+          # Die Pooler-Adresse des Belege-Projekts (Region eu-west-3) wird hier ermittelt.
+          if [ -z "${SUPABASE_DB_URL}" ]; then
+            export PGPASSWORD="${RLS_PASSWORT}"
+            for host in aws-1-eu-west-3 aws-0-eu-west-3; do
+              url="postgresql://rls_pruefung.lpuxvvfrrcnbuzafscyk@${host}.pooler.supabase.com:5432/postgres"
+              if fehler=$(psql "${url}" -X -A -t -c 'SELECT 1' 2>&1 >/dev/null); then
+                SUPABASE_DB_URL="${url}"
+                echo "Verbunden über ${host}."
+                break
+              fi
+              echo "${host}: ${fehler}"
+            done
+            if [ -z "${SUPABASE_DB_URL}" ]; then
+              echo "::error::Keine Verbindung zum Belege-Projekt. Passwort im Secret RLS_PRUEFUNG_PASSWORT prüfen (siehe Meldungen oben)."
+              exit 1
+            fi
+          fi
 
           # Alle normalen und partitionierten Tabellen außerhalb der Supabase-/Postgres-Systemschemas,
           # bei denen RLS nicht aktiviert ist. Ausgabe: schema.tabelle, eine pro Zeile.
