@@ -1,8 +1,12 @@
 # Sicherheitsregeln für dieses Projekt
 
 Diese Regeln gelten für jede Änderung an Code oder Datenbank-Schema in
-diesem und den verwandten greathairday-Repos (gemeinsames Supabase-Projekt
-`wrxlaltgtgkdomklgrlj`). Sie existieren, weil am 2026-09-14 mehrere reale
+diesem und den verwandten greathairday-Repos. **Die Belege-App hat ein
+eigenes Supabase-Projekt `lpuxvvfrrcnbuzafscyk`** (Login, `belege_neu`,
+Cockpit, Beleg-Eingang). Mit dem gemeinsamen Projekt der anderen Apps
+(`wrxlaltgtgkdomklgrlj`) spricht sie nur über die öffentliche Meldefunktion
+`ghd_ereignis_melden_oeffentlich` (Wörni-Ereignis). Neue Tabellen und
+Migrationen dieser App gehören ins Belege-Projekt. Die Regeln existieren, weil am 2026-09-14 mehrere reale
 Lücken gefunden wurden, die durch diese Regeln verhindert worden wären:
 `salon_personen` ohne RLS (komplette Mitarbeiter-PINs öffentlich lesbar
 über den anon-Key), ein Auth-Bypass über eine erratbare Session-ID
@@ -57,6 +61,11 @@ etwas anderes war.
    einführt:** kurz `SICHERHEIT-RLS-CHECK.md` in diesem Repo durchgehen.
 
 ## Automatische Prüfung
+
+**Achtung Belege-App:** Das wöchentliche Audit unten prüft nur das
+gemeinsame Projekt `wrxlaltgtgkdomklgrlj`, **nicht** das Belege-Projekt
+`lpuxvvfrrcnbuzafscyk`. Für die Belege-Tabellen gibt es derzeit keine
+automatische RLS-Prüfung, hier also besonders auf Regel 1 achten.
 
 `.github/workflows/rls-audit.yml` prüft wöchentlich automatisch alle
 Tabellen im Supabase-Projekt auf fehlende RLS und legt bei einem Fund ein
