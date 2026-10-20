@@ -49,7 +49,10 @@ jobs:
           # Einfacher Weg: nur das Passwort des Lese-Kontos rls_pruefung als Secret.
           # Die Pooler-Adresse des Belege-Projekts (Region eu-west-3) wird hier ermittelt.
           if [ -z "${SUPABASE_DB_URL}" ]; then
-            export PGPASSWORD="${RLS_PASSWORT}"
+            # Leerzeichen und Zeilenumbrüche entfernen (rutschen beim Einfügen am Handy leicht mit hinein).
+            # Das Passwort selbst besteht nur aus Buchstaben und Zahlen.
+            PGPASSWORD=$(printf '%s' "${RLS_PASSWORT}" | tr -d '[:space:]')
+            export PGPASSWORD
             for host in aws-1-eu-west-3 aws-0-eu-west-3; do
               url="postgresql://rls_pruefung.lpuxvvfrrcnbuzafscyk@${host}.pooler.supabase.com:5432/postgres"
               if fehler=$(psql "${url}" -X -A -t -c 'SELECT 1' 2>&1 >/dev/null); then
