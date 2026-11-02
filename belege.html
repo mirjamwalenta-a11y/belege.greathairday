@@ -1108,6 +1108,8 @@ function kuerzeBelegtext(text,maxLen=6000,endeLen=2000){
 function belegPromptRegeln(kats){
   return `Rückgabeformat:
 {
+  "ist_beleg": true,
+  "dokumenttyp": "kurz, z.B. Rechnung, Kassenbon, Newsletter",
   "datum": "YYYY-MM-DD",
   "zahlungsdatum": "YYYY-MM-DD" oder null,
   "betrag": Zahl,
@@ -1129,6 +1131,7 @@ function belegPromptRegeln(kats){
 }
 
 Regeln:
+- ist_beleg: false, wenn das Dokument KEIN Buchungsbeleg ist, z.B. Klienten-Info/Newsletter des Steuerberaters, Checkliste, Infoblatt, Broschüre, Werbung, Prospekt, Vertrag, Brief ohne Rechnungsbetrag, Preisliste, Handbuch. Dann betrag=0 und dokumenttyp kurz benennen. true für Rechnungen, Kassenbons, Quittungen, Gutschriften, Zahlungsbestätigungen.
 - betrag: IMMER der Brutto-GESAMTBETRAG der gesamten Rechnung (Rechnungsendbetrag / Gesamt-Summe / Zahlbetrag / Total inkl. MwSt.). NICHT der Einzelpreis einer Position, NICHT der Nettobetrag, NICHT eine Zwischensumme. Bei Lieferantenrechnungen mit mehreren Positionen ist das IMMER der groesste ausgewiesene Endbetrag – typischerweise ganz unten auf der Rechnung mit Label wie "Gesamt-Summe", "Rechnungsbetrag", "Zahlbetrag", "Total", "Zu zahlen". Wenn du zwei plausible Betraege siehst (z.B. 44,95 und 1.498,46), nimm IMMER den als Gesamtbetrag der als Summe/Total/Gesamt/Zahlbetrag gekennzeichnet ist.
 - netto: Nettobetrag ohne USt (= betrag - ust_betrag), oder null wenn nicht erkennbar
 - ust_betrag: der USt-Betrag laut Beleg, oder null wenn nicht erkennbar
@@ -1606,13 +1609,6 @@ async function verarbeiteFileBulk(files,opt={}){
           text=ocrText&&ocrText.trim().length>20?ocrText:('Bild: '+file.name);
         }
       }
-      // Storage Upload
-      let datei_url=null;
-      try{
-        const pfad=S.userId+'/'+Date.now()+'_'+file.name.replace(/[^a-zA-Z0-9._-]/g,'_');
-        const upR=await fetch(SB_URL+'/storage/v1/object/belege/'+pfad,{method:'POST',headers:{'apikey':SB_KEY,'Authorization':'Bearer '+S.token,'Content-Type':file.type||'application/octet-stream'},body:file});
-        if(upR.ok)datei_url=SB_URL+'/storage/v1/object/belege/'+pfad;
-      }catch(e){console.warn('Storage Upload fehlgeschlagen:',e);}
       // QR-Code-Bereinigung (gleich wie in verarbeiteFile)
       function bereinige(t){return t.split(/\n/).filter(z=>{const s=z.trim();if(/^_R[0-9]-/.test(s))return false;if(/AT0_\d+\/\d+/.test(s))return false;if(/T\d{2}:\d{2}:\d{2}MSR/.test(s))return false;if(/[A-Za-z0-9+\/]{30,}={0,2}$/.test(s)&&!/[äöüÄÖÜ\s,]/.test(s))return false;if((s.match(/[A-Z0-9]/g)||[]).length>s.length*0.7&&s.length>20&&!/[äöü,\s]/.test(s))return false;return true;}).join('\n');}
       const textB=bereinige(text);
@@ -1641,7 +1637,12 @@ async function verarbeiteFileBulk(files,opt={}){
       // USt-Angaben — die Bulk-Erkennung kann daraus leicht den falschen Betrag übernehmen, ohne
       // dass es auffällt. Stattdessen in die Fehlerliste, von wo aus "Erneut versuchen" bei einer
       // einzelnen Datei automatisch die Einzel-Prüfansicht (mit Dokument-Vorschau) öffnet.
-      if(pruefNichtRechnung(textB,file.name)){
+      // Kein Buchungsbeleg (z.B. Klienten-Info/Checkliste des Steuerberaters, Newsletter):
+      // nicht speichern, nicht in den Storage laden und beim "Erneut versuchen" nicht
+      // nochmal durch die KI schicken — das Ergebnis wäre dasselbe.
+      if(res.ist_beleg===false&&!(betrag>0&&(res.rechnungsnummer||res.ust_betrag))){
+        S.bulkFehlerFiles.push({file,name:file.name,keinBeleg:true,grund:'Kein Beleg'+(res.dokumenttyp?' ('+String(res.dokumenttyp).substring(0,40)+')':'')});
+      }else if(pruefNichtRechnung(textB,file.name)){
         S.bulkFehlerFiles.push({file,name:file.name,grund:'Kein eindeutiges Rechnungsformat (z.B. Zahlungsavis/Mahnung) – bitte einzeln prüfen'});
       }else if(betrag>0){
         // Dubletten im Bulk-Modus NICHT speichern (statt hinterher zu warnen) — sonst muss
@@ -1650,6 +1651,14 @@ async function verarbeiteFileBulk(files,opt={}){
         if(pruefDublette(res.lieferant,datum,betrag,file.name)){
           S.bulkDupWarn.push(file.name+' ('+(res.lieferant||'?')+', '+eur(betrag)+')');
         }else{
+          // Storage-Upload erst hier, wenn der Beleg wirklich gespeichert wird — sonst bleiben
+          // für jede fehlgeschlagene Datei (und jeden Neuversuch) verwaiste Dateien im Storage.
+          let datei_url=null;
+          try{
+            const pfad=S.userId+'/'+Date.now()+'_'+file.name.replace(/[^a-zA-Z0-9._-]/g,'_');
+            const upR=await fetch(SB_URL+'/storage/v1/object/belege/'+pfad,{method:'POST',headers:{'apikey':SB_KEY,'Authorization':'Bearer '+S.token,'Content-Type':file.type||'application/octet-stream'},body:file});
+            if(upR.ok)datei_url=SB_URL+'/storage/v1/object/belege/'+pfad;
+          }catch(e){console.warn('Storage Upload fehlgeschlagen:',e);}
           await insertBeleg({
             datum,zahlungsdatum,betrag,netto:res.netto||null,ust_betrag:res.ust_betrag||null,ust_satz:res.ust_satz||null,
             art:res.art||'ausgabe',lieferant:(res.lieferant||'').substring(0,60),
@@ -1676,7 +1685,8 @@ async function verarbeiteFileBulk(files,opt={}){
   S.bulkModus=false;
   await loadBelege();
   const ok=S.bulkTotal-S.bulkFehlerFiles.length-S.bulkDupWarn.length;
-  toast(ok+' von '+S.bulkTotal+' Belegen gespeichert'+(S.bulkFehlerFiles.length?' · '+S.bulkFehlerFiles.length+' fehlgeschlagen':'')+(S.bulkDupWarn.length?' · '+S.bulkDupWarn.length+' übersprungen (Dublette)':'')+(S.bulkFehlerFiles.length||S.bulkDupWarn.length?'':'  ✓'));
+  const nKein=S.bulkFehlerFiles.filter(f=>f.keinBeleg).length,nFehl=S.bulkFehlerFiles.length-nKein;
+  toast(ok+' von '+S.bulkTotal+' Belegen gespeichert'+(nFehl?' · '+nFehl+' fehlgeschlagen':'')+(nKein?' · '+nKein+' kein Beleg':'')+(S.bulkDupWarn.length?' · '+S.bulkDupWarn.length+' übersprungen (Dublette)':'')+(S.bulkFehlerFiles.length||S.bulkDupWarn.length?'':'  ✓'));
   if(S.bulkDupWarn&&S.bulkDupWarn.length){
     setTimeout(()=>toast('⚠️ Nicht gespeichert, vermutlich bereits erfasst: '+S.bulkDupWarn.join(', ')+' — bei Bedarf einzeln hochladen.','err'),2500);
   }
@@ -1690,11 +1700,38 @@ async function verarbeiteFileBulk(files,opt={}){
 // Stapel neu hochladen zu müssen. Nutzt dieselbe verarbeiteFileBulk-Pipeline — bei nur
 // noch einer verbliebenen Datei landet die dann automatisch in der Einzel-Prüfansicht.
 async function bulkFehlerErneutVersuchen(){
-  const dateien=(S.bulkFehlerFiles||[]).map(f=>f.file);
+  const dateien=(S.bulkFehlerFiles||[]).filter(f=>!f.keinBeleg).map(f=>f.file);
   if(!dateien.length)return;
   S.bulkFehlerFiles=[];
   render();
   await verarbeiteFileBulk(dateien);
+}
+
+// Fehlerkarte nach Bulk-Upload: nach Grund gruppiert statt einer langen Namensliste.
+// "Kein Beleg"-Dateien (z.B. Steuerberater-Infos) sind kein Fehler, sondern bewusst
+// übersprungen — sie werden nicht nochmal versucht.
+function bulkFehlerKarte(){
+  const liste=S.bulkFehlerFiles||[];
+  const keinBeleg=liste.filter(f=>f.keinBeleg);
+  const fehler=liste.filter(f=>!f.keinBeleg);
+  const gruppen={};
+  fehler.forEach(f=>{(gruppen[f.grund]=gruppen[f.grund]||[]).push(f.name);});
+  const namenListe=namen=>'<details style="margin-top:4px"><summary style="cursor:pointer;user-select:none">Dateien anzeigen</summary><div style="margin-top:4px;word-break:break-word">'+namen.map(escHtml).join('<br>')+'</div></details>';
+  const blockFehler=fehler.length
+    ?'<div style="font-size:13px;font-weight:600;color:#991B1B;margin-bottom:6px">⚠️ '+fehler.length+' Datei(en) nicht gespeichert</div>'
+      +Object.entries(gruppen).map(([grund,namen])=>'<div style="font-size:12px;color:#991B1B;margin-bottom:6px"><strong>'+namen.length+'×</strong> '+escHtml(grund)+namenListe(namen)+'</div>').join('')
+    :'';
+  const blockKeinBeleg=keinBeleg.length
+    ?'<div style="font-size:12px;color:#856404;background:#FFF3CD;border:1px solid #F0C040;border-radius:8px;padding:8px 10px;margin:'+(fehler.length?'8px':'0')+' 0 10px"><strong>ℹ️ '+keinBeleg.length+' Datei(en) übersprungen – kein Beleg</strong><br>Das sieht nach Info-Material aus (z.B. Klienten-Info, Checkliste, Newsletter), nicht nach einer Rechnung. Es wurde nichts gespeichert.'+namenListe(keinBeleg.map(f=>f.name+' – '+f.grund))+'</div>'
+    :'';
+  const farbe=fehler.length?'background:#FEE2E2;border:1px solid #FCA5A5':'background:#fff;border:1px solid #F0C040';
+  return '<div class="card" style="'+farbe+';margin-bottom:12px">'
+    +blockFehler+blockKeinBeleg
+    +'<div style="display:flex;gap:8px;margin-top:6px">'
+      +(fehler.length?'<button class="btn-sm" style="flex:1;background:#991B1B;color:#fff;border:none;border-radius:8px;padding:8px;cursor:pointer" onclick="bulkFehlerErneutVersuchen()">🔄 '+fehler.length+' erneut versuchen</button>':'')
+      +'<button class="btn-sm" style="flex:1;background:#fff;color:#991B1B;border:1.5px solid #FCA5A5;border-radius:8px;padding:8px;cursor:pointer" onclick="S.bulkFehlerFiles=[];render()">'+(fehler.length?'Verwerfen':'OK, ausblenden')+'</button>'
+    +'</div>'
+  +'</div>';
 }
 
 function updatePruefBtn(){
@@ -2060,6 +2097,7 @@ function renderPruefModal(){
     +'<div class="pruef-hint">Erkannte Werte pr\u00FCfen und bei Bedarf korrigieren.</div>'
     +(S.pruef?.ocrRaw?'<details style="margin-bottom:12px"><summary style="font-size:11px;color:var(--ink3);cursor:pointer;user-select:none">🔍 OCR-Rohtext anzeigen (für Debugging)</summary><pre style="font-size:10px;color:var(--ink2);background:#f5f5f5;border-radius:8px;padding:10px;margin-top:6px;overflow-x:auto;white-space:pre-wrap;max-height:200px;overflow-y:auto">'+((S.pruef?.ocrRaw||'').substring(0,1500).replace(/</g,'&lt;'))+'</pre></details>':'')
     +(p.quelle==='lokal'?'<div style="background:#FEE2E2;color:#991B1B;border-radius:8px;padding:10px 12px;font-size:12px;margin-bottom:10px;border:1px solid #FCA5A5"><strong>&#9888;&#65039; KI-Erkennung nicht verfügbar</strong><br>Grund: '+String(p.kiFehler||'unbekannt').replace(/</g,'&lt;')+'<br>Datum, Betrag, Netto und MwSt wurden nur mit einfachen Textmustern geschätzt – bitte besonders sorgfältig prüfen.</div>':'')
+    +(p.res?.ist_beleg===false?'<div style="background:#FFF3CD;color:#856404;border-radius:8px;padding:10px 12px;font-size:12px;margin-bottom:10px;border:1px solid #F0C040"><strong>&#9888;&#65039; Das ist vermutlich kein Beleg</strong><br>Erkannt als: '+escHtml(p.res.dokumenttyp||'Info-Material')+'. Info-Schreiben, Checklisten oder Newsletter bitte nicht als Beleg speichern.</div>':'')
     +(pruefNichtRechnung(p.pdfText||'',p.dateiname||'')?'<div style="background:#FFF3CD;color:#856404;border-radius:8px;padding:10px 12px;font-size:12px;margin-bottom:10px;border:1px solid #F0C040"><strong>&#9888;&#65039; Kein buchungsrelevanter Beleg?</strong><br>Dieses Dokument wirkt m\u00F6glicherweise wie ein Lieferschein, Avis, Mahnung oder Bestellbest\u00E4tigung. Bitte vor dem Speichern pr\u00FCfen.</div>':'')
     +(pruefDublette(p.res.lieferant,p.res.datum,p.res.betrag,p.dateiname)?'<div style="background:#FEE2E2;color:#991B1B;border-radius:8px;padding:10px 12px;font-size:12px;margin-bottom:10px;border:1px solid #FCA5A5"><strong>&#9888;&#65039; M\u00F6gliche Dublette</strong><br>Dieser Beleg k\u00F6nnte bereits erfasst worden sein. Bitte vor dem Speichern Lieferant, Datum, Betrag und Belegnummer pr\u00FCfen.</div>':'')
     +(brauchtPruefung(p.res)?'<div style="background:#FEE2E2;color:#991B1B;border-radius:8px;padding:10px 12px;font-size:12px;margin-bottom:10px;border:1px solid #FCA5A5"><strong>\u{1F536} Vor Abschluss pr\u00FCfen \u2014 '+pruefGruende(p.res).join(', ')+'</strong><br>Dieser Beleg ist noch nicht sauber genug f\u00FCr den Monatsabschluss \u2013 bitte manuell pr\u00FCfen.</div>':'')
@@ -2255,14 +2293,7 @@ function render(){
     const mO=kats.map(k=>'<option value="'+k.id+'"'+(S.manuell.kategorie===k.id?' selected':'')+'>'+k.icon+' '+k.label+'</option>').join('');
     inhalt=eingangBanner()
       +(!S.loading&&S.bulkFehlerFiles.length
-        ?'<div class="card" style="background:#FEE2E2;border:1px solid #FCA5A5;margin-bottom:12px">'
-          +'<div style="font-size:13px;font-weight:600;color:#991B1B;margin-bottom:6px">⚠️ '+S.bulkFehlerFiles.length+' Datei(en) beim letzten Bulk-Upload fehlgeschlagen</div>'
-          +'<div style="font-size:12px;color:#991B1B;margin-bottom:10px">'+S.bulkFehlerFiles.map(f=>f.name+' ('+f.grund+')').join(', ')+'</div>'
-          +'<div style="display:flex;gap:8px">'
-            +'<button class="btn-sm" style="flex:1;background:#991B1B;color:#fff;border:none;border-radius:8px;padding:8px;cursor:pointer" onclick="bulkFehlerErneutVersuchen()">🔄 Erneut versuchen</button>'
-            +'<button class="btn-sm" style="flex:1;background:#fff;color:#991B1B;border:1.5px solid #FCA5A5;border-radius:8px;padding:8px;cursor:pointer" onclick="S.bulkFehlerFiles=[];render()">Verwerfen</button>'
-          +'</div>'
-        +'</div>'
+        ?bulkFehlerKarte()
         :'')
       +(S.loading&&S.bulkModus
         // Bulk-Fortschrittsanzeige
@@ -2272,7 +2303,7 @@ function render(){
           +'<div style="background:#E8E0EF;border-radius:6px;height:8px;overflow:hidden">'
             +'<div style="background:var(--accent);height:8px;border-radius:6px;transition:width 0.3s;width:'+(S.bulkTotal>0?Math.round(S.bulkDone/S.bulkTotal*100):0)+'%"></div>'
           +'</div>'
-          +(S.bulkFehlerFiles.length?'<div style="font-size:11px;color:var(--red);margin-top:8px">⚠️ Fehler: '+S.bulkFehlerFiles.map(f=>f.name+' ('+f.grund+')').join(', ')+'</div>':'')
+          +(S.bulkFehlerFiles.length?'<div style="font-size:11px;color:var(--red);margin-top:8px">⚠️ '+S.bulkFehlerFiles.length+' nicht gespeichert (Details nach Abschluss)</div>':'')
         +'</div>'
         :(S.loading?'<div class="analyzing"><div class="analyzing-dot"></div><span style="font-size:13px;color:var(--accent);font-weight:500">Beleg wird analysiert…</span></div>':''))
       +(S.loading
